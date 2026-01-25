@@ -3,15 +3,20 @@ export interface Container {
   id: string
   imageType: string
   status: string
+  cost?: number // Cost in dollars
   createdAt: string
-  expiryTime: string
-  expiresIn: number // seconds
+  expiryAt: string // ISO timestamp when container expires
+  expiresIn?: number // seconds (deprecated, computed from expiryAt)
+  cpuMilli?: number // CPU allocation in millicores
+  memoryMB?: number // Memory allocation in MB
 }
 
 // ProvisionRequest for creating containers
 export interface ProvisionRequest {
   imageType: string
   durationMinutes: number
+  cpuMilli?: number
+  memoryMB?: number
 }
 
 // ProvisionResponse after container creation

@@ -60,6 +60,11 @@ func (c *Client) TTL(ctx context.Context, key string) (time.Duration, error) {
 	return c.rdb.TTL(ctx, key).Result()
 }
 
+// Ping checks connectivity
+func (c *Client) Ping(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
+}
+
 // Close closes the Redis connection
 func (c *Client) Close() error {
 	return c.rdb.Close()

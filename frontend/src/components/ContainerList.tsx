@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { containerApi } from '../services/containerApi'
 import type { Container } from '../types/container'
 import './ContainerList.css'
+import { ContainerLogs } from './ContainerLogs'
 
 export const ContainerList: React.FC = () => {
   const [containers, setContainers] = useState<Container[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [timers, setTimers] = useState<Record<string, number>>({})
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchContainers()
@@ -31,17 +33,16 @@ export const ContainerList: React.FC = () => {
 
   const fetchContainers = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/containers')
-      if (!response.ok) throw new Error('Failed to fetch containers')
-      
-      const data = await response.json()
-      const containerList = data.containers || []
+      const containerList = await containerApi.getContainers()
       setContainers(containerList)
 
       // Initialize timers for each container
       const newTimers: Record<string, number> = {}
       containerList.forEach((c: Container) => {
-        newTimers[c.id] = Math.max(0, c.expiresIn || 0)
+        const expiryTime = new Date(c.expiryAt).getTime()
+        const now = Date.now()
+        const secondsLeft = Math.max(0, Math.floor((expiryTime - now) / 1000))
+        newTimers[c.id] = secondsLeft
       })
       setTimers(newTimers)
       setError(null)
@@ -55,9 +56,7 @@ export const ContainerList: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Delete this container?')) {
       try {
-        await fetch(`http://localhost:8080/api/containers/${id}`, {
-          method: 'DELETE',
-        })
+        await containerApi.deleteContainer(id)
         await fetchContainers()
       } catch (err) {
         alert(
@@ -98,6 +97,9 @@ export const ContainerList: React.FC = () => {
                 <th>Container ID</th>
                 <th>Image</th>
                 <th>Status</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                <th>Cost</th>
                 <th>Created</th>
                 <th>Time Remaining</th>
                 <th>Actions</th>
@@ -117,6 +119,18 @@ export const ContainerList: React.FC = () => {
                       {container.status}
                     </span>
                   </td>
+                    <td className="cpu">
+                      {container.cpuMilli ? `${container.cpuMilli}m` : '-'}
+                    </td>
+                    <td className="memory">
+                      {container.memoryMB ? `${container.memoryMB} MB` : '-'}
+                    </td>
+                  <td className="cost">
+                      <span className={`cost-badge ${container.status === 'terminated' ? 'final-cost' : ''}`}>
+                        ${container.cost?.toFixed(2) || '0.00'}
+                        {container.status === 'terminated' && <small> (final)</small>}
+                      </span>
+                  </td>
                   <td className="created-at">
                     {new Date(container.createdAt).toLocaleTimeString()}
                   </td>
@@ -128,6 +142,14 @@ export const ContainerList: React.FC = () => {
                     </span>
                   </td>
                   <td className="actions">
+                      <button
+                        onClick={() => setSelectedContainerId(container.id)}
+                        className="btn btn-secondary btn-small"
+                        disabled={container.status !== 'running'}
+                        style={{ marginRight: '8px' }}
+                      >
+                        Logs
+                      </button>
                     <button
                       onClick={() => handleDelete(container.id)}
                       className="btn btn-danger btn-small"
@@ -140,6 +162,12 @@ export const ContainerList: React.FC = () => {
             </tbody>
           </table>
         </div>
+      )}
+      {selectedContainerId && (
+        <ContainerLogs
+          containerId={selectedContainerId}
+          onClose={() => setSelectedContainerId(null)}
+        />
       )}
     </div>
   )

@@ -40,12 +40,13 @@ func (h *ContainersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ContainerResponse struct {
-		ID        string `json:"id"`
-		ImageType string `json:"imageType"`
-		Status    string `json:"status"`
-		CreatedAt string `json:"createdAt"`
-		ExpiryAt  string `json:"expiryAt"`
-		ExpiresIn int    `json:"expiresIn"`
+		ID        string  `json:"id"`
+		ImageType string  `json:"imageType"`
+		Status    string  `json:"status"`
+		Cost      float64 `json:"cost"`
+		CreatedAt string  `json:"createdAt"`
+		ExpiryAt  string  `json:"expiryAt"`
+		ExpiresIn int     `json:"expiresIn"`
 	}
 
 	respItems := make([]ContainerResponse, 0, len(containers))
@@ -59,6 +60,7 @@ func (h *ContainersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ID:        c.ID,
 			ImageType: c.ImageType,
 			Status:    c.Status,
+			Cost:      c.Cost,
 			CreatedAt: c.CreatedAt.Format(time.RFC3339),
 			ExpiryAt:  c.ExpiryAt.Format(time.RFC3339),
 			ExpiresIn: remaining,

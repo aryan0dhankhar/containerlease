@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/yourorg/containerlease/internal/domain"
@@ -19,6 +20,8 @@ type CleanupWorker struct {
 	interval            time.Duration
 	maxRetries          int
 }
+
+const archiveRetention = 15 * time.Minute
 
 // NewCleanupWorker creates a new cleanup worker
 func NewCleanupWorker(
@@ -59,25 +62,28 @@ func (w *CleanupWorker) Start(ctx context.Context) {
 
 // cleanupExpiredContainers is the main cleanup routine
 func (w *CleanupWorker) cleanupExpiredContainers(ctx context.Context) {
-	// Query Redis for all expired leases
-	expiredLeases, err := w.leaseRepository.GetExpiredLeases()
+	w.logger.Info("running cleanup check for expired or orphaned containers")
+
+	containers, err := w.containerRepository.List()
 	if err != nil {
-		w.logger.Error("failed to get expired leases",
+		w.logger.Error("failed to list containers",
 			slog.String("error", err.Error()),
 		)
 		return
 	}
 
-	if len(expiredLeases) == 0 {
-		// No expired containers
-		return
-	}
+	now := time.Now()
+	for _, c := range containers {
+		if now.After(c.ExpiryAt) || now.Equal(c.ExpiryAt) {
+			w.cleanupContainer(ctx, c.ID)
+			continue
+		}
 
-	w.logger.Info("found expired leases", slog.Int("count", len(expiredLeases)))
-
-	// Clean up each expired container
-	for _, containerID := range expiredLeases {
-		w.cleanupContainer(ctx, containerID)
+		leaseKey := fmt.Sprintf("lease:%s", c.ID)
+		if _, err := w.leaseRepository.GetLease(leaseKey); err != nil {
+			w.logger.Info("missing lease for container, cleaning up", slog.String("container_id", c.ID))
+			w.cleanupContainer(ctx, c.ID)
+		}
 	}
 }
 
@@ -109,26 +115,70 @@ func (w *CleanupWorker) cleanupContainer(ctx context.Context, containerID string
 func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) bool {
 	logger := w.logger.With(slog.String("container_id", containerID))
 
-	// Step 1: Stop Docker container
-	if err := w.dockerClient.StopContainer(ctx, containerID); err != nil {
-		logger.Error("failed to stop container", slog.String("error", err.Error()))
+	// Get container to find Docker ID
+	container, err := w.containerRepository.GetByID(containerID)
+	if err != nil {
+		logger.Error("failed to get container", slog.String("error", err.Error()))
 		return false
 	}
-	logger.Debug("container stopped")
+
+	if container.Status == "terminated" {
+		logger.Debug("container already terminated, skipping")
+		return true
+	}
+
+	// If still pending (no Docker ID), just mark terminated and remove lease
+	if container.DockerID == "" {
+		logger.Info("container pending without Docker ID, marking terminated")
+		container.Status = "terminated"
+		container.Cost = calculateCost(container.ImageType, time.Since(container.CreatedAt).Minutes())
+		container.ExpiryAt = time.Now().Add(archiveRetention)
+		if err := w.containerRepository.Save(container); err != nil {
+			logger.Error("failed to persist container", slog.String("error", err.Error()))
+			return false
+		}
+		leaseKey := fmt.Sprintf("lease:%s", containerID)
+		if err := w.leaseRepository.DeleteLease(leaseKey); err != nil {
+			logger.Error("failed to delete lease", slog.String("error", err.Error()))
+			return false
+		}
+		return true
+	}
+
+	// Step 1: Stop Docker container
+	if err := w.dockerClient.StopContainer(ctx, container.DockerID); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "no such container") {
+			logger.Error("failed to stop container", slog.String("docker_id", container.DockerID), slog.String("error", err.Error()))
+			return false
+		}
+		logger.Warn("container not found during stop, continuing", slog.String("docker_id", container.DockerID))
+	} else {
+		logger.Debug("container stopped", slog.String("docker_id", container.DockerID))
+	}
 
 	// Step 2: Remove Docker container
-	if err := w.dockerClient.RemoveContainer(ctx, containerID); err != nil {
-		logger.Error("failed to remove container", slog.String("error", err.Error()))
-		return false
+	if err := w.dockerClient.RemoveContainer(ctx, container.DockerID); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "no such container") {
+			logger.Error("failed to remove container", slog.String("docker_id", container.DockerID), slog.String("error", err.Error()))
+			return false
+		}
+		logger.Warn("container not found during remove, continuing", slog.String("docker_id", container.DockerID))
+	} else {
+		logger.Debug("container removed", slog.String("docker_id", container.DockerID))
 	}
-	logger.Debug("container removed")
 
-	// Step 3: Delete from container repository
-	if err := w.containerRepository.Delete(containerID); err != nil {
-		logger.Error("failed to delete from container repository", slog.String("error", err.Error()))
+	// Step 3: Mark terminated, compute usage-based cost, retain record briefly
+	runtimeMinutes := time.Since(container.CreatedAt).Minutes()
+	if runtimeMinutes < 0 {
+		runtimeMinutes = 0
+	}
+	container.Cost = calculateCost(container.ImageType, runtimeMinutes)
+	container.Status = "terminated"
+	container.ExpiryAt = time.Now().Add(archiveRetention)
+	if err := w.containerRepository.Save(container); err != nil {
+		logger.Error("failed to persist container", slog.String("error", err.Error()))
 		return false
 	}
-	logger.Debug("deleted from container repository")
 
 	// Step 4: Delete lease from Redis
 	leaseKey := fmt.Sprintf("lease:%s", containerID)
@@ -139,4 +189,20 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 	logger.Debug("deleted lease")
 
 	return true
+}
+
+func calculateCost(imageType string, durationMinutes float64) float64 {
+	hourlyRate := 0.0
+	switch imageType {
+	case "ubuntu":
+		hourlyRate = 0.04
+	case "alpine":
+		hourlyRate = 0.01
+	default:
+		hourlyRate = 0.04
+	}
+	if durationMinutes < 0 {
+		durationMinutes = 0
+	}
+	return hourlyRate * (durationMinutes / 60.0)
 }

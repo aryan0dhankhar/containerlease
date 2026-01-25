@@ -58,6 +58,16 @@
   display: inline-block;
 }
 
+.cost-badge {
+  background-color: #cfe2ff;
+  color: #084298;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-block;
+}
+
 .status-badge {
   padding: 0.25rem 0.75rem;
   border-radius: 20px;
@@ -71,10 +81,25 @@
   color: #155724;
 }
 
+.status-pending {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-error {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
 .status-exited,
 .status-stopped {
   background-color: #f8d7da;
   color: #721c24;
+}
+
+.status-terminated {
+  background-color: #e7e7e7;
+  color: #555;
 }
 
 .timer {
@@ -112,6 +137,43 @@
 
 .btn-danger:active {
   transform: translateY(0);
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #5a6268;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
+}
+
+.btn-secondary:disabled {
+  background-color: #d3d3d3;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.final-cost {
+  font-weight: bold;
+  color: #2e7d32;
+}
+
+.final-cost small {
+  display: block;
+  font-size: 10px;
+  color: #66bb6a;
+  font-style: italic;
+  margin-top: 2px;
 }
 
 .btn-small {

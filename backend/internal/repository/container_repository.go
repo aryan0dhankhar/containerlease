@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/yourorg/containerlease/internal/domain"
 	"github.com/yourorg/containerlease/internal/infrastructure/redis"
@@ -34,8 +35,13 @@ func (r *ContainerRepository) Save(container *domain.Container) error {
 		return fmt.Errorf("failed to marshal container: %w", err)
 	}
 
-	// Store without TTL (lease TTL manages expiry)
-	if err := r.redis.Set(context.Background(), key, string(data), -1); err != nil {
+	// Apply TTL based on expiry to enforce lifecycle; ensure minimal TTL of 1 second
+	ttl := time.Until(container.ExpiryAt)
+	if ttl < time.Second {
+		ttl = time.Second
+	}
+
+	if err := r.redis.Set(context.Background(), key, string(data), ttl); err != nil {
 		return fmt.Errorf("failed to store container: %w", err)
 	}
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -52,11 +54,12 @@ func main() {
 	containerRepo := repository.NewContainerRepository(redisClient, log)
 
 	// 6. Initialize services
-	containerService := service.NewContainerService(dockerClient, leaseRepo, containerRepo)
+	containerService := service.NewContainerService(dockerClient, leaseRepo, containerRepo, log, cfg)
 
 	// 7. Initialize handlers
-	provisionHandler := handler.NewProvisionHandler(containerService, log)
-	logsHandler := handler.NewLogsHandler(dockerClient, log)
+	provisionHandler := handler.NewProvisionHandler(containerService, log, cfg)
+	provisionStatusHandler := handler.NewProvisionStatusHandler(containerRepo, log)
+	logsHandler := handler.NewLogsHandler(dockerClient, log, cfg.CORSAllowedOrigins, containerRepo)
 	statusHandler := handler.NewContainersHandler(containerRepo, log)
 	deleteHandler := handler.NewDeleteHandler(containerService, log)
 
@@ -64,12 +67,19 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/provision", provisionHandler)
 	mux.Handle("GET /api/containers", statusHandler)
+	mux.Handle("GET /api/containers/{id}/status", provisionStatusHandler)
 	mux.Handle("DELETE /api/containers/{id}", deleteHandler)
 	mux.Handle("GET /ws/logs/{id}", logsHandler)
 
-	// Basic CORS middleware to allow frontend on port 3000
+	// CORS middleware honoring configured origins
 	handlerWithCORS := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if originAllowed(cfg.CORSAllowedOrigins, origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else if len(cfg.CORSAllowedOrigins) > 0 {
+			w.Header().Set("Access-Control-Allow-Origin", cfg.CORSAllowedOrigins[0])
+		}
+		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
 
@@ -80,6 +90,26 @@ func main() {
 
 		mux.ServeHTTP(w, r)
 	})
+
+	// Health and readiness endpoints
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := redisClient.Ping(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("redis not ready"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ready"))
+	})
+
+	// Attach request ID middleware for observability
+	rootHandler := withRequestID(handlerWithCORS, log)
 
 	// 9. Start cleanup worker in background
 	cleanupWorker := worker.NewCleanupWorker(
@@ -97,7 +127,7 @@ func main() {
 	// 10. Start HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.ServerPort),
-		Handler:      handlerWithCORS,
+		Handler:      rootHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -129,4 +159,46 @@ func main() {
 
 	cancel() // Stop cleanup worker
 	log.Info("server stopped")
+}
+
+type requestIDKey struct{}
+
+// withRequestID attaches a request ID to the context and response headers for traceability
+func withRequestID(next http.Handler, log *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := generateRequestID()
+		w.Header().Set("X-Request-ID", reqID)
+
+		ctx := context.WithValue(r.Context(), requestIDKey{}, reqID)
+		start := time.Now()
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+
+		log.Info("request completed",
+			slog.String("request_id", reqID),
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Duration("duration_ms", time.Since(start)),
+		)
+	})
+}
+
+func originAllowed(allowed []string, origin string) bool {
+	if origin == "" {
+		return false
+	}
+	for _, a := range allowed {
+		if a == "*" || a == origin {
+			return true
+		}
+	}
+	return false
+}
+
+func generateRequestID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
+	}
+	return fmt.Sprintf("req-%d", time.Now().UnixNano())
 }

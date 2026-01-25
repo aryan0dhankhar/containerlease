@@ -40,17 +40,14 @@ func NewClient(host string, logger *slog.Logger) (*Client, error) {
 	return &Client{cli: cli, logger: logger}, nil
 }
 
-// CreateContainer creates a new Docker container
-func (c *Client) CreateContainer(ctx context.Context, imageType string) (string, error) {
-	// Determine image name based on type
-	var imageName string
-	switch imageType {
-	case "ubuntu":
-		imageName = "ubuntu:latest"
-	case "alpine":
-		imageName = "alpine:latest"
-	default:
-		return "", fmt.Errorf("unsupported image type: %s", imageType)
+// CreateContainer creates a new Docker container (synchronously)
+func (c *Client) CreateContainer(ctx context.Context, imageType string, cpuMilli int, memoryMB int, logDemo bool) (string, error) {
+	imageName := getImageName(imageType)
+	if cpuMilli <= 0 {
+		cpuMilli = 500
+	}
+	if memoryMB <= 0 {
+		memoryMB = 512
 	}
 
 	// Pull image if needed
@@ -59,15 +56,21 @@ func (c *Client) CreateContainer(ctx context.Context, imageType string) (string,
 	}
 
 	// Create container with resource limits
+	cmd := []string{"sleep", "infinity"}
+	if logDemo {
+		// Use a simple shell loop to emit logs every second
+		cmd = []string{"sh", "-c", "while true; do echo $(date) 'container demo log'; sleep 1; done"}
+	}
+
 	config := &container.Config{
 		Image: imageName,
-		Cmd:   []string{"sleep", "infinity"}, // Keep container running
+		Cmd:   cmd,
 	}
 
 	hostConfig := &container.HostConfig{
 		Resources: container.Resources{
-			Memory:    512 * 1024 * 1024, // 512 MB
-			CPUShares: 1024,              // Standard CPU share
+			Memory:   int64(memoryMB) * 1024 * 1024,
+			NanoCPUs: int64(cpuMilli) * 1_000_000, // 1 CPU = 1e9 nanoseconds
 		},
 	}
 
@@ -115,4 +118,30 @@ func (c *Client) StreamLogs(ctx context.Context, containerID string) (io.ReadClo
 // Close closes the Docker client
 func (c *Client) Close() error {
 	return c.cli.Close()
+}
+
+// PullImageAsync pulls a Docker image asynchronously (doesn't block)
+func (c *Client) PullImageAsync(ctx context.Context, imageType string) error {
+	imageName := getImageName(imageType)
+	readCloser, err := c.cli.ImagePull(ctx, imageName, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to pull image: %w", err)
+	}
+	defer readCloser.Close()
+
+	// Drain the response body (required for async pull to complete)
+	_, err = io.ReadAll(readCloser)
+	return err
+}
+
+// getImageName returns the full image name for a given type
+func getImageName(imageType string) string {
+	switch imageType {
+	case "ubuntu":
+		return "ubuntu:22.04"
+	case "alpine":
+		return "alpine:latest"
+	default:
+		return "ubuntu:22.04" // Default fallback
+	}
 }

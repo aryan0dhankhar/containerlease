@@ -1,6 +1,31 @@
 # ContainerLease - Temporary Docker Container Provisioning Platform
 
-A modern web platform where developers can provision temporary Docker containers for a fixed duration. Built with Go backend, React frontend, and Redis state management.
+A modern web platform where developers can provision temporary Docker containers with strict resource limits, automatic lifecycle management, and real-time log streaming. Built with Go backend, React frontend, and Redis state management.
+
+## ✨ Features
+
+### Core Capabilities
+- **🐳 Docker Provisioning**: Native Docker SDK integration for container management
+- **⏱️ Time-Limited Leases**: Automatic expiration with configurable TTLs (5-120 minutes)
+- **📊 Resource Quotas**: Hard CPU/memory limits enforced per container
+- **💰 Usage-Based Billing**: Cost calculated on actual runtime at termination
+- **🧹 Garbage Collection**: Background reconciliation removes expired/orphaned containers
+- **📡 Real-Time Logs**: WebSocket streaming with heartbeat keepalive
+- **🔒 Security**: Image allowlist, CORS enforcement, origin validation
+- **📈 Observability**: Structured JSON logging with request IDs
+
+### Resource Management
+- **CPU**: 250m - 2000m millicores (0.25 - 2 CPU cores)
+- **Memory**: 256MB - 2GB
+- **Duration**: 5 - 120 minutes (configurable)
+- **Allowed Images**: Ubuntu 22.04, Alpine Linux (extensible)
+
+### Frontend Features
+- Live dashboard with countdown timers per container
+- Real-time log viewer with connection state indicators
+- Resource selector with validation
+- Cost estimation vs. final billing display
+- Responsive design with mobile support
 
 ## Architecture Overview
 

@@ -25,19 +25,19 @@ func NewLeaseRepository(redisClient *redis.Client, logger *slog.Logger) *LeaseRe
 	}
 }
 
-// CreateLease stores a lease in Redis with TTL
+// CreateLease stores a lease in Redis (without TTL, cleanup worker will delete it)
 func (r *LeaseRepository) CreateLease(lease *domain.Lease) error {
 	data, err := json.Marshal(lease)
 	if err != nil {
 		return fmt.Errorf("failed to marshal lease: %w", err)
 	}
 
-	// Calculate TTL based on expiry time
 	ttl := time.Until(lease.ExpiryTime)
-	if ttl <= 0 {
-		ttl = time.Second // Minimum TTL
+	if ttl < time.Second {
+		ttl = time.Second
 	}
 
+	// Store lease with TTL matching expiry to ensure automatic cleanup
 	if err := r.redis.Set(context.Background(), lease.LeaseKey, string(data), ttl); err != nil {
 		return fmt.Errorf("failed to store lease: %w", err)
 	}
@@ -78,19 +78,25 @@ func (r *LeaseRepository) GetExpiredLeases() ([]string, error) {
 	}
 
 	var expiredContainerIDs []string
+	now := time.Now()
 
 	for _, key := range keys {
-		ttl, err := r.redis.TTL(context.Background(), key)
+		// Get the lease data to check expiry time
+		data, err := r.redis.Get(context.Background(), key)
 		if err != nil {
-			r.logger.Error("failed to get ttl", slog.String("key", key), slog.String("error", err.Error()))
+			// Key might have expired between Keys() and Get()
 			continue
 		}
 
-		// TTL < 0 means key doesn't exist or has no expiry
-		// But we set TTL when creating, so if TTL is 0 or negative (redis returns negative for expired)
-		// it means it's expired or about to expire
-		if ttl <= 0 {
-			// Extract container ID from "lease:abc123"
+		var lease domain.Lease
+		if err := json.Unmarshal([]byte(data), &lease); err != nil {
+			r.logger.Error("failed to unmarshal lease", slog.String("key", key), slog.String("error", err.Error()))
+			continue
+		}
+
+		// Check if lease has expired
+		if lease.ExpiryTime.Before(now) || lease.ExpiryTime.Equal(now) {
+			// Extract container ID from "lease:container-123"
 			containerID := key[6:] // Remove "lease:" prefix
 			expiredContainerIDs = append(expiredContainerIDs, containerID)
 		}
