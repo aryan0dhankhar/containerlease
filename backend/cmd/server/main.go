@@ -12,11 +12,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/yourorg/containerlease/internal/handler"
 	"github.com/yourorg/containerlease/internal/infrastructure/docker"
 	"github.com/yourorg/containerlease/internal/infrastructure/logger"
 	"github.com/yourorg/containerlease/internal/infrastructure/redis"
 	"github.com/yourorg/containerlease/internal/repository"
+	"github.com/yourorg/containerlease/internal/security/audit"
+	"github.com/yourorg/containerlease/internal/security/auth"
+	"github.com/yourorg/containerlease/internal/security/middleware"
+	"github.com/yourorg/containerlease/internal/security/ratelimit"
 	"github.com/yourorg/containerlease/internal/service"
 	"github.com/yourorg/containerlease/internal/worker"
 	"github.com/yourorg/containerlease/pkg/config"
@@ -59,17 +64,25 @@ func main() {
 	// 7. Initialize handlers
 	provisionHandler := handler.NewProvisionHandler(containerService, log, cfg)
 	provisionStatusHandler := handler.NewProvisionStatusHandler(containerRepo, log)
+	presetsHandler := handler.NewPresetsHandler(cfg, log)
 	logsHandler := handler.NewLogsHandler(dockerClient, log, cfg.CORSAllowedOrigins, containerRepo)
 	statusHandler := handler.NewContainersHandler(containerRepo, log)
 	deleteHandler := handler.NewDeleteHandler(containerService, log)
 
+	// 7a. Initialize security components
+	tokenManager := auth.NewTokenManager(os.Getenv("JWT_SECRET"), "containerlease")
+	rateLimiter := ratelimit.NewLimiter(100, time.Minute) // 100 requests per minute per tenant
+	auditLogger := audit.NewLogger(log)
+
 	// 8. Setup HTTP routes
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/provision", provisionHandler)
+	mux.Handle("GET /api/presets", presetsHandler)
 	mux.Handle("GET /api/containers", statusHandler)
 	mux.Handle("GET /api/containers/{id}/status", provisionStatusHandler)
 	mux.Handle("DELETE /api/containers/{id}", deleteHandler)
 	mux.Handle("GET /ws/logs/{id}", logsHandler)
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// CORS middleware honoring configured origins
 	handlerWithCORS := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +94,7 @@ func main() {
 		}
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -91,7 +104,7 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
-	// Health and readiness endpoints
+	// Health and readiness endpoints (no auth required)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -108,8 +121,15 @@ func main() {
 		w.Write([]byte("ready"))
 	})
 
-	// Attach request ID middleware for observability
-	rootHandler := withRequestID(handlerWithCORS, log)
+	// Chain middleware: request ID -> CORS -> JWT -> rate limit -> audit
+	rootHandler := withRequestID(
+		middleware.AuditMiddleware(auditLogger)(
+			middleware.RateLimitMiddleware(rateLimiter, log)(
+				middleware.JWTMiddleware(tokenManager, log)(handlerWithCORS),
+			),
+		),
+		log,
+	)
 
 	// 9. Start cleanup worker in background
 	cleanupWorker := worker.NewCleanupWorker(
@@ -133,7 +153,12 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Info("server starting", slog.Int("port", cfg.ServerPort))
+	log.Info("server starting",
+		slog.Int("port", cfg.ServerPort),
+		slog.String("auth", "jwt"),
+		slog.Int("rate_limit", 100),
+		slog.String("rate_limit_window", "1m"),
+	)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -158,6 +183,7 @@ func main() {
 	}
 
 	cancel() // Stop cleanup worker
+	rateLimiter.Stop()
 	log.Info("server stopped")
 }
 

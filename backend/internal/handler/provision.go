@@ -17,6 +17,7 @@ type ProvisionRequest struct {
 	CPUMilli        int    `json:"cpuMilli,omitempty"`
 	MemoryMB        int    `json:"memoryMB,omitempty"`
 	LogDemo         bool   `json:"logDemo,omitempty"`
+	VolumeSizeMB    int    `json:"volumeSizeMB,omitempty"`
 }
 
 // ProvisionResponse represents the response after provisioning
@@ -95,6 +96,17 @@ func (h *ProvisionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate volume size (optional)
+	volumeSizeMB := req.VolumeSizeMB
+	maxVolumeMB := h.config.MaxVolumeMB
+	if maxVolumeMB == 0 {
+		maxVolumeMB = 5120 // default 5GB if not configured
+	}
+	if volumeSizeMB > maxVolumeMB {
+		http.Error(w, "volumeSizeMB exceeds allowed maximum", http.StatusBadRequest)
+		return
+	}
+
 	// Call service layer
 	container, err := h.containerService.ProvisionContainer(r.Context(), service.ProvisionOptions{
 		ImageType:       req.ImageType,
@@ -102,6 +114,7 @@ func (h *ProvisionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CPUMilli:        cpuMilli,
 		MemoryMB:        memoryMB,
 		LogDemo:         req.LogDemo,
+		VolumeSizeMB:    volumeSizeMB,
 	})
 	if err != nil {
 		h.logger.Error("failed to provision container", slog.String("error", err.Error()))

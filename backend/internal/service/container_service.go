@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/yourorg/containerlease/internal/observability/metrics"
 	"github.com/yourorg/containerlease/pkg/config"
 )
 
@@ -27,6 +28,7 @@ type ProvisionOptions struct {
 	CPUMilli        int
 	MemoryMB        int
 	LogDemo         bool
+	VolumeSizeMB    int
 }
 
 // NewContainerService creates a new container service
@@ -83,22 +85,52 @@ func (s *ContainerService) ProvisionContainer(ctx context.Context, opts Provisio
 	}
 
 	// 4. Start async provisioning in background goroutine
-	go s.asyncProvisionContainer(context.Background(), container.ID, opts.ImageType, opts.CPUMilli, opts.MemoryMB, opts.LogDemo)
+	go s.asyncProvisionContainer(context.Background(), container.ID, opts.ImageType, opts.CPUMilli, opts.MemoryMB, opts.LogDemo, opts.VolumeSizeMB)
 
 	return container, nil
 }
 
 // asyncProvisionContainer runs the actual Docker provisioning in background
-func (s *ContainerService) asyncProvisionContainer(ctx context.Context, tempID string, imageType string, cpuMilli int, memoryMB int, logDemo bool) {
+func (s *ContainerService) asyncProvisionContainer(ctx context.Context, tempID string, imageType string, cpuMilli int, memoryMB int, logDemo bool, volumeSizeMB int) {
 	s.logger.Info("starting async provisioning", slog.String("temp_id", tempID))
+	start := time.Now()
+
+	// Create volume if requested
+	var volumeID string
+	if volumeSizeMB > 0 {
+		generatedVolumeID := fmt.Sprintf("vol-%s", tempID)
+		volName, err := s.dockerClient.CreateVolume(ctx, generatedVolumeID, volumeSizeMB)
+		if err != nil {
+			s.logger.Error("failed to create volume",
+				slog.String("temp_id", tempID),
+				slog.String("volume_id", generatedVolumeID),
+				slog.String("error", err.Error()),
+			)
+			metrics.ObserveProvision("error", time.Since(start))
+			existingContainer, _ := s.containerRepository.GetByID(tempID)
+			if existingContainer != nil {
+				existingContainer.Status = "error"
+				existingContainer.Error = fmt.Sprintf("failed to create volume: %v", err)
+				_ = s.containerRepository.Save(existingContainer)
+			}
+			return
+		}
+		volumeID = volName
+		s.logger.Info("volume created", slog.String("temp_id", tempID), slog.String("volume_id", volumeID))
+	}
 
 	// Create actual Docker container
-	dockerID, err := s.dockerClient.CreateContainer(ctx, imageType, cpuMilli, memoryMB, logDemo)
+	dockerID, err := s.dockerClient.CreateContainer(ctx, imageType, cpuMilli, memoryMB, logDemo, volumeID)
 	if err != nil {
 		s.logger.Error("failed to create container",
 			slog.String("temp_id", tempID),
 			slog.String("error", err.Error()),
 		)
+		metrics.ObserveProvision("error", time.Since(start))
+		// Clean up volume if it was created
+		if volumeID != "" {
+			_ = s.dockerClient.RemoveVolume(context.Background(), volumeID)
+		}
 		// Mark as error and update
 		existingContainer, _ := s.containerRepository.GetByID(tempID)
 		if existingContainer != nil {
@@ -109,13 +141,17 @@ func (s *ContainerService) asyncProvisionContainer(ctx context.Context, tempID s
 		return
 	}
 
-	// Update container with real Docker ID and running status
+	// Update container with real Docker ID, running status, and volume
 	existingContainer, _ := s.containerRepository.GetByID(tempID)
 	if existingContainer != nil {
 		existingContainer.DockerID = dockerID
 		existingContainer.Status = "running"
+		existingContainer.VolumeID = volumeID
+		existingContainer.VolumeSize = volumeSizeMB
 		_ = s.containerRepository.Save(existingContainer)
-		s.logger.Info("container successfully created", slog.String("temp_id", tempID), slog.String("docker_id", dockerID))
+		s.logger.Info("container successfully created", slog.String("temp_id", tempID), slog.String("docker_id", dockerID), slog.String("volume_id", volumeID))
+		metrics.ObserveProvision("success", time.Since(start))
+		metrics.IncrementActive()
 	}
 }
 
@@ -135,6 +171,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	if err != nil {
 		return fmt.Errorf("container not found: %w", err)
 	}
+	wasRunning := container.Status == "running"
 
 	// Only try to stop/remove if we have a Docker ID (not still pending)
 	if container.DockerID != "" {
@@ -144,6 +181,13 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 		if err := s.dockerClient.RemoveContainer(context.Background(), container.DockerID); err != nil {
 			s.logger.Warn("failed to remove container", slog.String("docker_id", container.DockerID), slog.String("error", err.Error()))
+		}
+	}
+
+	// Remove volume if attached
+	if container.VolumeID != "" {
+		if err := s.dockerClient.RemoveVolume(context.Background(), container.VolumeID); err != nil {
+			s.logger.Warn("failed to remove volume", slog.String("container_id", containerID), slog.String("volume_id", container.VolumeID), slog.String("error", err.Error()))
 		}
 	}
 
@@ -163,6 +207,11 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	if err := s.leaseRepository.DeleteLease(fmt.Sprintf("lease:%s", containerID)); err != nil {
 		return fmt.Errorf("failed to delete lease: %w", err)
 	}
+
+	if wasRunning {
+		metrics.DecrementActive()
+	}
+	metrics.ObserveCleanup("manual", "success")
 
 	return nil
 }

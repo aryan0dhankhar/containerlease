@@ -23,6 +23,16 @@ type Config struct {
 	MaxCPUMilli            int
 	DefaultMemoryMB        int
 	MaxMemoryMB            int
+	MaxVolumeMB            int
+	Presets                map[string]Preset
+}
+
+// Preset defines a provisioning template
+type Preset struct {
+	Name        string
+	CPUMilli    int
+	MemoryMB    int
+	DurationMin int
 }
 
 // Load reads configuration from environment variables
@@ -67,6 +77,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid MAX_MEMORY_MB: %w", err)
 	}
 
+	maxVolumeMB, err := strconv.Atoi(getEnv("MAX_VOLUME_MB", "5120"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAX_VOLUME_MB: %w", err)
+	}
+
 	return &Config{
 		Environment:            getEnv("ENVIRONMENT", "development"),
 		ServerPort:             port,
@@ -85,6 +100,27 @@ func Load() (*Config, error) {
 		MaxCPUMilli:     maxCPUMilli,
 		DefaultMemoryMB: defaultMemoryMB,
 		MaxMemoryMB:     maxMemoryMB,
+		MaxVolumeMB:     maxVolumeMB,
+		Presets: map[string]Preset{
+			"tiny": {
+				Name:        "Tiny (256MB, 250m CPU, 5min)",
+				CPUMilli:    250,
+				MemoryMB:    256,
+				DurationMin: 5,
+			},
+			"standard": {
+				Name:        "Standard (512MB, 500m CPU, 30min)",
+				CPUMilli:    500,
+				MemoryMB:    512,
+				DurationMin: 30,
+			},
+			"large": {
+				Name:        "Large (1GB, 1000m CPU, 60min)",
+				CPUMilli:    1000,
+				MemoryMB:    1024,
+				DurationMin: 60,
+			},
+		},
 	}, nil
 }
 

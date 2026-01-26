@@ -1,5 +1,16 @@
 # ContainerLease - Temporary Docker Container Provisioning Platform
 
+## 🎨 NEW: Enterprise Dark Theme Redesign
+
+The UI has been completely redesigned with a **GitHub Dark Dimmed dark theme**, featuring:
+- **Monospace countdown timers** (HH:MM:SS) with warning animations
+- **Terminal-style log viewer** (black background, green text)
+- **Status color indicators** (green running, amber warning, red critical)
+- **Responsive card grid** (3 cols desktop, 1 col mobile)
+- **Control bar launchpad** (image, duration, resources, costs)
+
+👉 **See the design**: [LAUNCH_NOTES.md](LAUNCH_NOTES.md) | [DARK_THEME_VISUAL_GUIDE.md](DARK_THEME_VISUAL_GUIDE.md)
+
 A modern web platform where developers can provision temporary Docker containers with strict resource limits, automatic lifecycle management, and real-time log streaming. Built with Go backend, React frontend, and Redis state management.
 
 ## ✨ Features

@@ -3,35 +3,51 @@ import './App.css'
 import { ProvisionForm } from './components/ProvisionForm'
 import { ContainerList } from './components/ContainerList'
 
+const BUILD_TIME = new Date().toLocaleString()
+
 function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [containerCount, setContainerCount] = useState(0)
 
   const handleContainerProvisioned = useCallback(() => {
-    // Trigger container list refresh
     setRefreshTrigger((prev) => prev + 1)
   }, [])
 
   return (
     <div className="app">
+      {/* Top Header */}
       <header className="app-header">
-        <h1>🐳 ContainerLease</h1>
-        <p className="subtitle">Provision temporary Docker containers</p>
+        <div className="header-left">
+          <span>Container</span>
+          <span style={{ color: '#38bdf8' }}>Lease</span>
+        </div>
+        <div className="header-right">
+          <div className="stat">
+            <span className="stat-label">Active</span>
+            <span className="stat-value">{containerCount}</span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Uptime</span>
+            <span className="stat-value">∞</span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Build</span>
+            <span className="stat-value" style={{ fontSize: '0.85rem' }}>{BUILD_TIME.split(',')[0]}</span>
+          </div>
+        </div>
       </header>
 
+      {/* Control Bar / Launchpad */}
+      <div className="control-bar">
+        <ProvisionForm onProvisioned={handleContainerProvisioned} />
+      </div>
+
+      {/* Main Content */}
       <main className="app-main">
-        <section className="provision-section">
-          <h2>Provision Container</h2>
-          <ProvisionForm onProvisioned={handleContainerProvisioned} />
-        </section>
-
-        <section className="containers-section">
-          <ContainerList key={refreshTrigger} />
-        </section>
+        <div className="container-grid">
+          <ContainerList key={refreshTrigger} onCountChange={setContainerCount} />
+        </div>
       </main>
-
-      <footer className="app-footer">
-        <p>Containers auto-delete after lease expires</p>
-      </footer>
     </div>
   )
 }

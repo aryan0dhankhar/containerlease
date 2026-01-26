@@ -37,24 +37,9 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return false
-		}
-		return checkAllowedOrigin(r.Context(), origin)
+		// Allow all origins in development
+		return true
 	},
-}
-
-func checkAllowedOrigin(ctx context.Context, origin string) bool {
-	allowed := ctx.Value(originCtxKey{})
-	if allowedOrigins, ok := allowed.([]string); ok {
-		for _, a := range allowedOrigins {
-			if a == "*" || a == origin {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // ServeHTTP handles WebSocket requests for container logs

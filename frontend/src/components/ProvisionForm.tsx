@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react'
 import { containerApi } from '../services/containerApi'
-import './ProvisionForm.css'
 
 interface ProvisionFormProps {
   onProvisioned?: () => void
@@ -18,10 +17,10 @@ export const ProvisionForm: React.FC<ProvisionFormProps> = ({
   const [duration, setDuration] = useState<number>(30)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
   const [cpuMilli, setCpuMilli] = useState<number>(500)
   const [memoryMB, setMemoryMB] = useState<number>(512)
   const [logDemo, setLogDemo] = useState<boolean>(true)
+  const [volumeSizeMB, setVolumeSizeMB] = useState<number>(0)
 
   const minDuration = 5
   const maxDuration = 120
@@ -35,115 +34,129 @@ export const ProvisionForm: React.FC<ProvisionFormProps> = ({
     e.preventDefault()
     setLoading(true)
     setError(null)
-    setSuccess(null)
 
     try {
-      const result = await containerApi.provision(imageType, duration, cpuMilli, memoryMB, logDemo)
-      setSuccess(
-        `Container ${result.id.substring(0, 12)} provisioned successfully!`
-      )
+      const result = await containerApi.provision(imageType, duration, cpuMilli, memoryMB, logDemo, volumeSizeMB > 0 ? volumeSizeMB : undefined)
+      
+      // Show success toast
+      const event = new CustomEvent('toast', {
+        detail: {
+          type: 'success',
+          message: `Container ${result.id.substring(0, 12)} provisioned!`
+        }
+      })
+      window.dispatchEvent(event)
+
+      // Reset form
       setImageType('ubuntu')
       setDuration(30)
       setCpuMilli(500)
       setMemoryMB(512)
       setLogDemo(true)
+      setVolumeSizeMB(0)
       onProvisioned?.()
-      setTimeout(() => setSuccess(null), 5000)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
-      setError(message)
+      const event = new CustomEvent('toast', {
+        detail: {
+          type: 'error',
+          message: message
+        }
+      })
+      window.dispatchEvent(event)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="provision-form">
-      <div className="form-group">
-        <label htmlFor="imageType">Image Type:</label>
+    <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '1rem', alignItems: 'center', width: '100%' }}>
+      <div className="control-group">
+        <label className="control-label">Image</label>
         <select
-          id="imageType"
           value={imageType}
           onChange={(e) => setImageType(e.target.value)}
           disabled={loading}
-          className="form-input"
+          className="control-select"
         >
           <option value="ubuntu">Ubuntu 22.04</option>
           <option value="alpine">Alpine Linux</option>
         </select>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="duration">Duration (minutes):</label>
+      <div className="control-group">
+        <label className="control-label">Duration</label>
         <input
-          id="duration"
-          type="number"
+          type="range"
           min={minDuration}
           max={maxDuration}
           value={duration}
           onChange={(e) => setDuration(parseInt(e.target.value))}
           disabled={loading}
-          className="form-input"
+          style={{ width: '120px' }}
         />
-        <small>Min: {minDuration} min, Max: {maxDuration} min</small>
+        <span style={{ minWidth: '50px', textAlign: 'right', fontFamily: 'monospace', fontSize: '0.9rem' }}>
+          {duration}m
+        </span>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="cpuMilli">CPU (millicores):</label>
+      <div className="control-group">
+        <label className="control-label">CPU</label>
         <select
-          id="cpuMilli"
           value={cpuMilli}
           onChange={(e) => setCpuMilli(parseInt(e.target.value))}
           disabled={loading}
-          className="form-input"
+          className="control-select"
         >
-          <option value="250">250m (0.25 CPU)</option>
-          <option value="500">500m (0.5 CPU)</option>
-          <option value="1000">1000m (1 CPU)</option>
-          <option value="2000">2000m (2 CPU)</option>
+          <option value="250">250m</option>
+          <option value="500">500m</option>
+          <option value="1000">1000m</option>
+          <option value="2000">2000m</option>
         </select>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="memoryMB">Memory (MB):</label>
+      <div className="control-group">
+        <label className="control-label">Memory</label>
         <select
-          id="memoryMB"
           value={memoryMB}
           onChange={(e) => setMemoryMB(parseInt(e.target.value))}
           disabled={loading}
-          className="form-input"
+          className="control-select"
         >
-          <option value="256">256 MB</option>
-          <option value="512">512 MB</option>
-          <option value="1024">1024 MB (1 GB)</option>
-          <option value="2048">2048 MB (2 GB)</option>
+          <option value="256">256M</option>
+          <option value="512">512M</option>
+          <option value="1024">1024M</option>
+          <option value="2048">2048M</option>
         </select>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="logDemo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="control-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: '#8b949e' }}>
           <input
-            id="logDemo"
             type="checkbox"
             checked={logDemo}
             onChange={(e) => setLogDemo(e.target.checked)}
             disabled={loading}
+            style={{ cursor: 'pointer' }}
           />
-          <span>Enable demo logs (emit log lines for testing)</span>
+          Demo Logs
         </label>
-        <small>Recommended for testing the log viewer</small>
       </div>
 
-      <div className="cost-display">
-        <strong>Estimated Cost: ${cost.toFixed(2)}</strong>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <span style={{ fontSize: '0.85rem', color: '#6e7681' }}>
+          Est: <span style={{ fontFamily: 'monospace', color: '#8b949e' }}>${cost.toFixed(2)}</span>
+        </span>
+        <button type="submit" disabled={loading} className="btn-provision">
+          {loading ? 'Provisioning...' : 'Provision'}
+        </button>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
-      {success && <div className="success-message">{success}</div>}
-
-      <button type="submit" disabled={loading} className="btn btn-primary">
-        {loading ? 'Provisioning...' : 'Provision Container'}
-      </button>
+      {error && (
+        <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', background: '#f87171', color: '#fff', padding: '1rem', borderRadius: '8px', fontSize: '0.9rem' }}>
+          {error}
+        </div>
+      )}
     </form>
   )
 }

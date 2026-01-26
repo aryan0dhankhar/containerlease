@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/yourorg/containerlease/internal/observability/metrics"
 )
 
 // CleanupWorker periodically checks for expired container leases and cleans them up
@@ -71,6 +72,13 @@ func (w *CleanupWorker) cleanupExpiredContainers(ctx context.Context) {
 		)
 		return
 	}
+	runningCount := 0
+	for _, c := range containers {
+		if c.Status == "running" {
+			runningCount++
+		}
+	}
+	metrics.SetActive(runningCount)
 
 	now := time.Now()
 	for _, c := range containers {
@@ -101,6 +109,7 @@ func (w *CleanupWorker) cleanupContainer(ctx context.Context, containerID string
 
 		if w.performCleanup(ctx, containerID) {
 			logger.Info("cleanup successful")
+			metrics.ObserveCleanup("worker", "success")
 			return
 		}
 	}
@@ -109,6 +118,7 @@ func (w *CleanupWorker) cleanupContainer(ctx context.Context, containerID string
 	logger.Error("cleanup failed after retries",
 		slog.Int("max_retries", w.maxRetries),
 	)
+	metrics.ObserveCleanup("worker", "error")
 }
 
 // performCleanup executes the actual cleanup steps
@@ -121,6 +131,7 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 		logger.Error("failed to get container", slog.String("error", err.Error()))
 		return false
 	}
+	wasRunning := container.Status == "running"
 
 	if container.Status == "terminated" {
 		logger.Debug("container already terminated, skipping")
@@ -167,7 +178,16 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 		logger.Debug("container removed", slog.String("docker_id", container.DockerID))
 	}
 
-	// Step 3: Mark terminated, compute usage-based cost, retain record briefly
+	// Step 3: Remove volume if attached
+	if container.VolumeID != "" {
+		if err := w.dockerClient.RemoveVolume(ctx, container.VolumeID); err != nil {
+			logger.Error("failed to remove volume", slog.String("volume_id", container.VolumeID), slog.String("error", err.Error()))
+			return false
+		}
+		logger.Debug("volume removed", slog.String("volume_id", container.VolumeID))
+	}
+
+	// Step 4: Mark terminated, compute usage-based cost, retain record briefly
 	runtimeMinutes := time.Since(container.CreatedAt).Minutes()
 	if runtimeMinutes < 0 {
 		runtimeMinutes = 0
@@ -180,13 +200,17 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 		return false
 	}
 
-	// Step 4: Delete lease from Redis
+	// Step 5: Delete lease from Redis
 	leaseKey := fmt.Sprintf("lease:%s", containerID)
 	if err := w.leaseRepository.DeleteLease(leaseKey); err != nil {
 		logger.Error("failed to delete lease", slog.String("error", err.Error()))
 		return false
 	}
 	logger.Debug("deleted lease")
+
+	if wasRunning {
+		metrics.DecrementActive()
+	}
 
 	return true
 }

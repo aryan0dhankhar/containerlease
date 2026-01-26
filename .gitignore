@@ -3,6 +3,7 @@ backend/bin/
 backend/vendor/
 backend/.env
 backend/.env.local
+backend/server
 *.log
 
 # Frontend
