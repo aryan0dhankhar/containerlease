@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,7 +20,10 @@ import (
 	"github.com/yourorg/containerlease/internal/infrastructure/docker"
 	"github.com/yourorg/containerlease/internal/infrastructure/logger"
 	"github.com/yourorg/containerlease/internal/infrastructure/redis"
+	obsmetrics "github.com/yourorg/containerlease/internal/observability/metrics"
+	"github.com/yourorg/containerlease/internal/observability/tracing"
 	"github.com/yourorg/containerlease/internal/repository"
+	"github.com/yourorg/containerlease/internal/security"
 	"github.com/yourorg/containerlease/internal/security/audit"
 	"github.com/yourorg/containerlease/internal/security/auth"
 	"github.com/yourorg/containerlease/internal/security/middleware"
@@ -25,9 +31,22 @@ import (
 	"github.com/yourorg/containerlease/internal/service"
 	"github.com/yourorg/containerlease/internal/worker"
 	"github.com/yourorg/containerlease/pkg/config"
+	"github.com/yourorg/containerlease/pkg/database"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
+	// 0. Validate required environment variables
+	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret == "" {
+		fmt.Fprintf(os.Stderr, "FATAL: JWT_SECRET environment variable is required\n")
+		os.Exit(1)
+	}
+	if dbHost := os.Getenv("DB_HOST"); dbHost == "" && os.Getenv("ENVIRONMENT") == "production" {
+		fmt.Fprintf(os.Stderr, "FATAL: DB_HOST environment variable required in production\n")
+		os.Exit(1)
+	}
+
 	// 1. Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -38,6 +57,13 @@ func main() {
 	// 2. Initialize structured logger
 	log := logger.NewLogger(cfg.LogLevel)
 	log.Info("starting ContainerLease server", slog.String("environment", cfg.Environment))
+
+	// 2a. Initialize tracing (no-op if endpoint not set)
+	shutdownTracing, err := tracing.Init(context.Background(), log, "containerlease", cfg.Environment)
+	if err != nil {
+		log.Error("failed to initialize tracing", slog.String("error", err.Error()))
+	}
+	defer func() { _ = shutdownTracing(context.Background()) }()
 
 	// 3. Initialize Redis client
 	redisClient, err := redis.NewClient(cfg.RedisURL)
@@ -54,28 +80,73 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 5. Initialize repositories
+	// 5. Initialize repositories (Redis-backed for containers/leases)
 	leaseRepo := repository.NewLeaseRepository(redisClient, log)
 	containerRepo := repository.NewContainerRepository(redisClient, log)
 
+	// 5a. Initialize PostgreSQL connection (for users/tenants/auth)
+	dbCfg := database.DefaultConfig()
+	// Override with env vars if set
+	if h := os.Getenv("DB_HOST"); h != "" {
+		dbCfg.Host = h
+	}
+	if u := os.Getenv("DB_USER"); u != "" {
+		dbCfg.User = u
+	}
+	if p := os.Getenv("DB_PASSWORD"); p != "" {
+		dbCfg.Password = p
+	}
+	if d := os.Getenv("DB_NAME"); d != "" {
+		dbCfg.Database = d
+	}
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer dbCancel()
+	dbPool, err := database.NewConnectionPool(dbCtx, dbCfg, log)
+	if err != nil {
+		log.Error("failed to connect to Postgres", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	// 5b. Run database migrations
+	if err := runMigrations(dbCtx, dbPool.GetDB(), log); err != nil {
+		log.Error("failed to run migrations", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// 5c. SQL-backed repositories
+	userRepo := repository.NewPostgresUserRepository(dbPool.GetDB(), log)
+	_ = userRepo // used by auth service
+
 	// 6. Initialize services
 	containerService := service.NewContainerService(dockerClient, leaseRepo, containerRepo, log, cfg)
+	authService := service.NewAuthService(userRepo, os.Getenv("JWT_SECRET"), log)
 
-	// 7. Initialize handlers
-	provisionHandler := handler.NewProvisionHandler(containerService, log, cfg)
+	// 7. Initialize security components
+	tokenManager := auth.NewTokenManager(os.Getenv("JWT_SECRET"), "containerlease")
+	userStore := auth.NewUserStore()
+	rateLimiter := ratelimit.NewLimiter(100, time.Minute) // 100 requests per minute per tenant
+	auditLogger := audit.NewLogger(log)
+	authz := security.NewAuthorizationService(log)
+
+	// 7a. Initialize handlers
+	loginHandler := handler.NewLoginHandler(tokenManager, userStore, log)
+	// New auth endpoints backed by Postgres users
+	authHandler := handler.NewAuthHandler(authService, log)
+	provisionHandler := handler.NewProvisionHandler(containerService, log, cfg, authz)
 	provisionStatusHandler := handler.NewProvisionStatusHandler(containerRepo, log)
 	presetsHandler := handler.NewPresetsHandler(cfg, log)
 	logsHandler := handler.NewLogsHandler(dockerClient, log, cfg.CORSAllowedOrigins, containerRepo)
-	statusHandler := handler.NewContainersHandler(containerRepo, log)
-	deleteHandler := handler.NewDeleteHandler(containerService, log)
-
-	// 7a. Initialize security components
-	tokenManager := auth.NewTokenManager(os.Getenv("JWT_SECRET"), "containerlease")
-	rateLimiter := ratelimit.NewLimiter(100, time.Minute) // 100 requests per minute per tenant
-	auditLogger := audit.NewLogger(log)
+	statusHandler := handler.NewContainersHandler(containerRepo, log, authz)
+	deleteHandler := handler.NewDeleteHandler(containerService, log, authz)
 
 	// 8. Setup HTTP routes
 	mux := http.NewServeMux()
+	mux.Handle("POST /api/login", loginHandler)
+	// New auth routes
+	mux.HandleFunc("POST /api/auth/register", authHandler.Register)
+	mux.HandleFunc("POST /api/auth/login", authHandler.Login)
+	mux.HandleFunc("POST /api/auth/change-password", authHandler.ChangePassword)
 	mux.Handle("POST /api/provision", provisionHandler)
 	mux.Handle("GET /api/presets", presetsHandler)
 	mux.Handle("GET /api/containers", statusHandler)
@@ -121,15 +192,22 @@ func main() {
 		w.Write([]byte("ready"))
 	})
 
-	// Chain middleware: request ID -> CORS -> JWT -> rate limit -> audit
-	rootHandler := withRequestID(
-		middleware.AuditMiddleware(auditLogger)(
-			middleware.RateLimitMiddleware(rateLimiter, log)(
-				middleware.JWTMiddleware(tokenManager, log)(handlerWithCORS),
+	// Base app handler with CORS
+	// Order matters: rate limit protects all endpoints, JWT validates protected ones
+	base := withRequestID(
+		middleware.RateLimitMiddleware(rateLimiter, log)(
+			middleware.JWTMiddleware(tokenManager, log)(
+				middleware.AuditMiddleware(auditLogger)(handlerWithCORS),
 			),
 		),
 		log,
 	)
+
+	// Add HTTP metrics middleware
+	withMetrics := obsmetrics.HTTPMetricsMiddleware(base)
+
+	// Wrap with OpenTelemetry HTTP handler for tracing
+	rootHandler := otelhttp.NewHandler(withMetrics, "http.server")
 
 	// 9. Start cleanup worker in background
 	cleanupWorker := worker.NewCleanupWorker(
@@ -165,7 +243,20 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		// TLS support: if cert/key files are set via env, use HTTPS
+		certFile := os.Getenv("TLS_CERT_FILE")
+		keyFile := os.Getenv("TLS_KEY_FILE")
+
+		var err error
+		if certFile != "" && keyFile != "" {
+			log.Info("TLS enabled", slog.String("cert", certFile), slog.String("key", keyFile))
+			err = server.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			log.Warn("TLS not configured - running in HTTP mode (insecure for production)")
+			err = server.ListenAndServe()
+		}
+
+		if err != nil && err != http.ErrServerClosed {
 			log.Error("server error", slog.String("error", err.Error()))
 		}
 	}()
@@ -209,6 +300,50 @@ func withRequestID(next http.Handler, log *slog.Logger) http.Handler {
 	})
 }
 
+func generateRequestID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
+	}
+	return fmt.Sprintf("req-%d", time.Now().UnixNano())
+}
+
+func runMigrations(ctx context.Context, db *sql.DB, log *slog.Logger) error {
+	// Simple migration runner: read SQL files from migrations dir and execute
+	migrationsDir := "migrations"
+	entries, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Info("no migrations directory found")
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+
+		path := filepath.Join(migrationsDir, entry.Name())
+		sqlBytes, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read migration %s: %w", path, err)
+		}
+
+		// Execute migration (idempotent: ignore "already exists" errors)
+		_, err = db.ExecContext(ctx, string(sqlBytes))
+		if err != nil {
+			if !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "duplicate") {
+				log.Warn("migration execution warning", slog.String("file", entry.Name()), slog.String("error", err.Error()))
+			}
+		} else {
+			log.Info("migration applied", slog.String("file", entry.Name()))
+		}
+	}
+	return nil
+}
+
 func originAllowed(allowed []string, origin string) bool {
 	if origin == "" {
 		return false
@@ -219,12 +354,4 @@ func originAllowed(allowed []string, origin string) bool {
 		}
 	}
 	return false
-}
-
-func generateRequestID() string {
-	buf := make([]byte, 8)
-	if _, err := rand.Read(buf); err == nil {
-		return hex.EncodeToString(buf)
-	}
-	return fmt.Sprintf("req-%d", time.Now().UnixNano())
 }

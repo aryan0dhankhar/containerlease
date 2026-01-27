@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bufio"
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,9 +19,6 @@ type LogsHandler struct {
 	containerRepo  domain.ContainerRepository
 }
 
-// originCtxKey used to pass allowed origins to upgrader
-type originCtxKey struct{}
-
 // NewLogsHandler creates a new logs handler
 func NewLogsHandler(dockerClient domain.DockerClient, logger *slog.Logger, allowedOrigins []string, containerRepo domain.ContainerRepository) *LogsHandler {
 	return &LogsHandler{
@@ -33,13 +29,26 @@ func NewLogsHandler(dockerClient domain.DockerClient, logger *slog.Logger, allow
 	}
 }
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins in development
-		return true
-	},
+// upgrader is initialized per-request to use instance's allowed origins
+func (h *LogsHandler) getUpgrader() websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				// Allow requests with no origin (e.g., non-browser clients)
+				return true
+			}
+			for _, allowed := range h.allowedOrigins {
+				if origin == allowed {
+					return true
+				}
+			}
+			h.logger.Warn("websocket origin rejected", slog.String("origin", origin))
+			return false
+		},
+	}
 }
 
 // ServeHTTP handles WebSocket requests for container logs
@@ -52,10 +61,8 @@ func (h *LogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Attach allowed origins to context for upgrader
-	r = r.WithContext(context.WithValue(r.Context(), originCtxKey{}, h.allowedOrigins))
-
-	// Upgrade HTTP connection to WebSocket
+	// Upgrade HTTP connection to WebSocket with origin checking
+	upgrader := h.getUpgrader()
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Error("websocket upgrade failed", slog.String("error", err.Error()))

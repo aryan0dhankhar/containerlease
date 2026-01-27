@@ -32,3 +32,11 @@ export interface LogEntry {
   level: string
   message: string
 }
+
+// LoginResponse from authentication
+export interface LoginResponse {
+  token: string
+  expiresAt: string
+  tenantId: string
+  userId: string
+}

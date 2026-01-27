@@ -7,19 +7,23 @@ import (
 	"time"
 
 	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/yourorg/containerlease/internal/security"
+	"github.com/yourorg/containerlease/internal/security/middleware"
 )
 
 // ContainersHandler handles listing active containers
 type ContainersHandler struct {
 	containerRepo domain.ContainerRepository
 	logger        *slog.Logger
+	authz         *security.AuthorizationService
 }
 
 // NewContainersHandler creates a new containers handler
-func NewContainersHandler(containerRepo domain.ContainerRepository, logger *slog.Logger) *ContainersHandler {
+func NewContainersHandler(containerRepo domain.ContainerRepository, logger *slog.Logger, authz *security.AuthorizationService) *ContainersHandler {
 	return &ContainersHandler{
 		containerRepo: containerRepo,
 		logger:        logger,
+		authz:         authz,
 	}
 }
 
@@ -32,7 +36,21 @@ func (h *ContainersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Debug("containers list request")
 
-	containers, err := h.containerRepo.List()
+	// Get tenant ID from context (set by JWT middleware) and require auth
+	tenantID := middleware.GetTenantFromContext(r.Context())
+	if tenantID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// RBAC: require permission to list containers
+	if err := h.authz.ValidatePermission(security.RoleUser, security.PermListContainers); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	containers, err := h.containerRepo.ListByTenant(tenantID)
+
 	if err != nil {
 		h.logger.Error("failed to list containers", slog.String("error", err.Error()))
 		http.Error(w, "failed to list containers", http.StatusInternalServerError)

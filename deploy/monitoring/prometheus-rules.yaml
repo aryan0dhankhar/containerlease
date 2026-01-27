@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: containerlease-rules
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: containerlease.rules
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            sum(rate(containerlease_http_requests_total{status=~"5.."}[5m]))
+              /
+            sum(rate(containerlease_http_requests_total[5m]))
+              > 0.05
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High HTTP 5xx error rate (>5%)"
+            description: "ContainerLease is returning 5xx responses above 5% over the last 10 minutes."
+
+        - alert: HighRequestLatency
+          expr: histogram_quantile(0.95, sum(rate(containerlease_http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "p95 request latency over 500ms"
+            description: "The 95th percentile request latency is above 500ms for 10 minutes."
+
+        - alert: NotReady
+          expr: up{job="containerlease"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ContainerLease target is down"
+            description: "Prometheus cannot scrape the ContainerLease service targets."

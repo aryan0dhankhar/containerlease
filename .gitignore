@@ -4,6 +4,7 @@ backend/vendor/
 backend/.env
 backend/.env.local
 backend/server
+backend/dump.rdb
 *.log
 
 # Frontend

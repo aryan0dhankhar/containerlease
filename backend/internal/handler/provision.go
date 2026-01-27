@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/yourorg/containerlease/internal/security"
+	"github.com/yourorg/containerlease/internal/security/middleware"
 	"github.com/yourorg/containerlease/internal/service"
 	"github.com/yourorg/containerlease/pkg/config"
 )
@@ -35,14 +37,16 @@ type ProvisionHandler struct {
 	containerService *service.ContainerService
 	logger           *slog.Logger
 	config           *config.Config
+	authz            *security.AuthorizationService
 }
 
 // NewProvisionHandler creates a new provision handler
-func NewProvisionHandler(containerService *service.ContainerService, logger *slog.Logger, cfg *config.Config) *ProvisionHandler {
+func NewProvisionHandler(containerService *service.ContainerService, logger *slog.Logger, cfg *config.Config, authz *security.AuthorizationService) *ProvisionHandler {
 	return &ProvisionHandler{
 		containerService: containerService,
 		logger:           logger,
 		config:           cfg,
+		authz:            authz,
 	}
 }
 
@@ -68,6 +72,10 @@ func (h *ProvisionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.isImageAllowed(req.ImageType) {
+		h.logger.Warn("image type not allowed",
+			slog.String("requested_image", req.ImageType),
+			slog.Any("allowed_images", h.config.AllowedImages),
+		)
 		http.Error(w, "imageType not allowed", http.StatusBadRequest)
 		return
 	}
@@ -107,8 +115,24 @@ func (h *ProvisionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get tenant ID from context (set by JWT middleware)
+	tenantID := middleware.GetTenantFromContext(r.Context())
+	if tenantID == "" {
+		h.logger.Error("tenant ID not found in context")
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// RBAC: require permission to create containers
+	// Default role is user; role propagation can be added to claims later
+	if err := h.authz.ValidatePermission(security.RoleUser, security.PermCreateContainer); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	// Call service layer
 	container, err := h.containerService.ProvisionContainer(r.Context(), service.ProvisionOptions{
+		TenantID:        tenantID,
 		ImageType:       req.ImageType,
 		DurationMinutes: req.DurationMinutes,
 		CPUMilli:        cpuMilli,

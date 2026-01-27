@@ -61,6 +61,38 @@ func (l *Limiter) Allow(tenantID string) bool {
 	return true
 }
 
+// AllowStrict allows requests with stricter limits for sensitive endpoints
+func (l *Limiter) AllowStrict(identifier string, maxReqs int, window time.Duration) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Use a separate key for strict limits to avoid conflicts
+	key := "strict:" + identifier
+	now := time.Now()
+	b, exists := l.buckets[key]
+	if !exists {
+		b = &bucket{requests: []time.Time{}}
+		l.buckets[key] = b
+	}
+
+	cutoff := now.Add(-window)
+	var reqs []time.Time
+	for _, t := range b.requests {
+		if t.After(cutoff) {
+			reqs = append(reqs, t)
+		}
+	}
+	b.requests = reqs
+	b.lastSeen = now
+
+	if len(b.requests) >= maxReqs {
+		return false
+	}
+
+	b.requests = append(b.requests, now)
+	return true
+}
+
 func (l *Limiter) cleanupOldBuckets() {
 	for range l.cleanup.C {
 		l.mu.Lock()

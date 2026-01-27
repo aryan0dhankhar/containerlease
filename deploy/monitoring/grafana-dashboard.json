@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 39,
+  "title": "ContainerLease Overview",
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active Containers",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "containerlease_active_containers",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "graph",
+      "title": "HTTP Requests (rate)",
+      "gridPos": {"x": 6, "y": 0, "w": 18, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(containerlease_http_requests_total[5m])) by (status)",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "graph",
+      "title": "Request Duration p95",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(containerlease_http_request_duration_seconds_bucket[5m])) by (le))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "graph",
+      "title": "Provision Duration",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(containerlease_provision_duration_seconds_sum[5m])) / sum(rate(containerlease_provision_duration_seconds_count[5m]))",
+        "refId": "A"
+      }]
+    }
+  ]
+}

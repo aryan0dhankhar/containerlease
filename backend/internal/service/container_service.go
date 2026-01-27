@@ -23,6 +23,7 @@ type ContainerService struct {
 
 // ProvisionOptions captures a resource request
 type ProvisionOptions struct {
+	TenantID        string
 	ImageType       string
 	DurationMinutes int
 	CPUMilli        int
@@ -56,14 +57,16 @@ func (s *ContainerService) ProvisionContainer(ctx context.Context, opts Provisio
 	cost := calculateCost(opts.ImageType, float64(opts.DurationMinutes))
 
 	container := &domain.Container{
-		ID:        generateContainerID(), // Generate temp ID
-		ImageType: opts.ImageType,
-		CPUMilli:  opts.CPUMilli,
-		MemoryMB:  opts.MemoryMB,
-		Status:    "pending", // Status is PENDING initially
-		CreatedAt: now,
-		ExpiryAt:  expiryTime,
-		Cost:      cost,
+		ID:          generateContainerID(), // Generate temp ID
+		TenantID:    opts.TenantID,
+		ImageType:   opts.ImageType,
+		CPUMilli:    opts.CPUMilli,
+		MemoryMB:    opts.MemoryMB,
+		Status:      "pending", // Status is PENDING initially
+		CreatedAt:   now,
+		ExpiryAt:    expiryTime,
+		Cost:        cost,
+		MaxRestarts: 3, // Phase 2: Self-healing default max restarts
 	}
 
 	// 2. Store container in repository with pending status

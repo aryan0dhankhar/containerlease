@@ -30,6 +30,7 @@ func NewContainerRepository(redisClient *redis.Client, logger *slog.Logger) *Con
 func (r *ContainerRepository) Save(container *domain.Container) error {
 	key := fmt.Sprintf("container:%s", container.ID)
 
+
 	data, err := json.Marshal(container)
 	if err != nil {
 		return fmt.Errorf("failed to marshal container: %w", err)
@@ -96,6 +97,43 @@ func (r *ContainerRepository) List() ([]*domain.Container, error) {
 		var c domain.Container
 		if err := json.Unmarshal([]byte(data), &c); err != nil {
 			r.logger.Error("failed to unmarshal container", slog.String("key", key), slog.String("error", err.Error()))
+			continue
+		}
+
+		// Ensure ID is present even if key parsing is needed
+		if c.ID == "" {
+			c.ID = strings.TrimPrefix(key, "container:")
+		}
+
+		containers = append(containers, &c)
+	}
+
+	return containers, nil
+}
+
+// ListByTenant returns containers for a specific tenant
+func (r *ContainerRepository) ListByTenant(tenantID string) ([]*domain.Container, error) {
+	keys, err := r.redis.Keys(context.Background(), "container:*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var containers []*domain.Container
+	for _, key := range keys {
+		data, err := r.redis.Get(context.Background(), key)
+		if err != nil {
+			r.logger.Error("failed to get container", slog.String("key", key), slog.String("error", err.Error()))
+			continue
+		}
+
+		var c domain.Container
+		if err := json.Unmarshal([]byte(data), &c); err != nil {
+			r.logger.Error("failed to unmarshal container", slog.String("key", key), slog.String("error", err.Error()))
+			continue
+		}
+
+		// Filter by tenant ID
+		if c.TenantID != tenantID {
 			continue
 		}
 

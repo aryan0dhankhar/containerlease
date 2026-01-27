@@ -38,7 +38,29 @@ interface ProvisionStatusResponse {
   timeLeftSeconds: number
 }
 
+export interface LoginResponse {
+  token: string
+  expiresAt: string
+  tenantId: string
+  userId: string
+}
+
 export const containerApi = {
+  async login(email: string, password: string): Promise<LoginResponse> {
+    const response = await fetch(`${BACKEND_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Login failed' }))
+      throw new Error(error.error || 'Login failed')
+    }
+
+    return response.json()
+  },
+
   async getPresets(): Promise<Preset[]> {
     const response = await fetch(`${BACKEND_URL}/api/presets`)
     if (!response.ok) {
@@ -56,11 +78,22 @@ export const containerApi = {
     logDemo?: boolean,
     volumeSizeMB?: number
   ): Promise<ProvisionResponse> {
+    const token = localStorage.getItem('token')
     const response = await fetch(`${BACKEND_URL}/api/provision`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+      },
       body: JSON.stringify({ imageType, durationMinutes, cpuMilli, memoryMB, logDemo, volumeSizeMB }),
     })
+
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.reload()
+      throw new Error('Session expired, please login again')
+    }
 
     if (!response.ok) {
       throw new Error(`Provision failed: ${response.statusText}`)
@@ -70,7 +103,17 @@ export const containerApi = {
   },
 
   async getContainers(): Promise<Container[]> {
-    const response = await fetch(`${BACKEND_URL}/api/containers`)
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${BACKEND_URL}/api/containers`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.reload()
+      throw new Error('Session expired, please login again')
+    }
 
     if (!response.ok) {
       throw new Error(`Get containers failed: ${response.statusText}`)
@@ -81,7 +124,17 @@ export const containerApi = {
   },
 
   async getProvisionStatus(id: string): Promise<ProvisionStatusResponse> {
-    const response = await fetch(`${BACKEND_URL}/api/containers/${id}/status`)
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${BACKEND_URL}/api/containers/${id}/status`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.reload()
+      throw new Error('Session expired, please login again')
+    }
 
     if (!response.ok) {
       throw new Error(`Get status failed: ${response.statusText}`)
@@ -91,9 +144,18 @@ export const containerApi = {
   },
 
   async deleteContainer(id: string): Promise<void> {
+    const token = localStorage.getItem('token')
     const response = await fetch(`${BACKEND_URL}/api/containers/${id}`, {
       method: 'DELETE',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     })
+
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.reload()
+      throw new Error('Session expired, please login again')
+    }
 
     if (!response.ok) {
       throw new Error(`Delete failed: ${response.statusText}`)

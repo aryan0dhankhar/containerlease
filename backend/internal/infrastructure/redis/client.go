@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -11,8 +10,7 @@ import (
 
 // Client wraps the Redis client with our custom methods
 type Client struct {
-	rdb    *redis.Client
-	logger *slog.Logger
+	rdb *redis.Client
 }
 
 // NewClient creates a new Redis client
