@@ -115,7 +115,7 @@ func main() {
 	// Use SSL by default for production, disable for local dev
 	if ssl := os.Getenv("DB_SSLMODE"); ssl != "" {
 		dbCfg.SSLMode = ssl
-	} else if environment == "production" {
+	} else if cfg.Environment == "production" {
 		dbCfg.SSLMode = "require"
 	}
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
