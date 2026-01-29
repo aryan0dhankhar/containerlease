@@ -100,6 +100,9 @@ func main() {
 	if h := os.Getenv("DB_HOST"); h != "" {
 		dbCfg.Host = h
 	}
+	if port := os.Getenv("DB_PORT"); port != "" {
+		fmt.Sscanf(port, "%d", &dbCfg.Port)
+	}
 	if u := os.Getenv("DB_USER"); u != "" {
 		dbCfg.User = u
 	}
@@ -108,6 +111,12 @@ func main() {
 	}
 	if d := os.Getenv("DB_NAME"); d != "" {
 		dbCfg.Database = d
+	}
+	// Use SSL by default for production, disable for local dev
+	if ssl := os.Getenv("DB_SSLMODE"); ssl != "" {
+		dbCfg.SSLMode = ssl
+	} else if environment == "production" {
+		dbCfg.SSLMode = "require"
 	}
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer dbCancel()
