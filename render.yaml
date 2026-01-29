@@ -16,8 +16,6 @@ services:
         value: changeme
       - key: DB_NAME
         value: containerlease
-      - key: REDIS_URL
-        value: redis://localhost:6379
       - key: JWT_SECRET
         generateValue: true
       - key: ENVIRONMENT

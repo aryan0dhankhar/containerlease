@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/aryan0dhankhar/containerlease/internal/handler"
 	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/docker"
 	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/logger"
@@ -32,6 +31,7 @@ import (
 	"github.com/aryan0dhankhar/containerlease/internal/worker"
 	"github.com/aryan0dhankhar/containerlease/pkg/config"
 	"github.com/aryan0dhankhar/containerlease/pkg/database"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -65,13 +65,23 @@ func main() {
 	}
 	defer func() { _ = shutdownTracing(context.Background()) }()
 
-	// 3. Initialize Redis client
-	redisClient, err := redis.NewClient(cfg.RedisURL)
-	if err != nil {
-		log.Error("failed to connect to Redis", slog.String("error", err.Error()))
-		os.Exit(1)
+	// 3. Initialize Redis client (optional - allows running without Redis)
+	var redisClient *redis.Client
+	if cfg.RedisURL != "" {
+		var err error
+		redisClient, err = redis.NewClient(cfg.RedisURL)
+		if err != nil {
+			log.Warn("failed to connect to Redis - running without cache", slog.String("error", err.Error()))
+			redisClient = nil
+		}
+	} else {
+		log.Info("Redis URL not configured - running without cache")
 	}
-	defer redisClient.Close()
+
+	// Ensure cleanup on exit
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
 
 	// 4. Initialize Docker client
 	dockerClient, err := docker.NewClient(cfg.DockerHost, log)
@@ -185,11 +195,16 @@ func main() {
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := redisClient.Ping(ctx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("redis not ready"))
-			return
+
+		// Check Redis if available
+		if redisClient != nil {
+			if err := redisClient.Ping(ctx); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("redis not ready"))
+				return
+			}
 		}
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ready"))
 	})
