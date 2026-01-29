@@ -94,6 +94,7 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins: []string{
 			"http://localhost:5173",
 			"http://localhost:3000",
+			"http://frontend:3000",
 		},
 		AllowedImages:   parseCSVEnv("ALLOWED_IMAGES", []string{"ubuntu", "alpine"}),
 		DefaultCPUMilli: defaultCPUMilli,

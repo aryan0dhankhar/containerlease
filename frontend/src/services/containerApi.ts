@@ -1,6 +1,6 @@
 import type { Container } from '../types/container'
 
-const BACKEND_URL = 'http://localhost:8080'
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080'
 
 export interface Preset {
   id: string
@@ -167,14 +167,24 @@ export const containerApi = {
     onMessage: (message: string) => void,
     onError: (error: Error) => void
   ): () => void {
-    const ws = new WebSocket(`ws://localhost:8080/ws/logs/${containerId}`)
+    const wsUrl = BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+    const ws = new WebSocket(`${wsUrl}/ws/logs/${containerId}`)
+
+    ws.onopen = () => {
+      console.log('WebSocket connected')
+    }
 
     ws.onmessage = (event) => {
       onMessage(event.data)
     }
 
-    ws.onerror = () => {
-      onError(new Error('WebSocket error'))
+    ws.onerror = (event) => {
+      console.error('WebSocket error:', event)
+      onError(new Error('WebSocket connection failed'))
+    }
+
+    ws.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason)
     }
 
     return () => {

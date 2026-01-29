@@ -1,6 +1,22 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: containerlease
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: containerlease
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U containerlease"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - containerlease
+
   redis:
     image: redis:7-alpine
     ports:
@@ -24,13 +40,20 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      DB_HOST: postgres
+      DB_USER: containerlease
+      DB_PASSWORD: dev
+      DB_NAME: containerlease
       DOCKER_HOST: unix:///var/run/docker.sock
       DOCKER_API_VERSION: "1.44"
       SERVER_PORT: 8080
       CLEANUP_INTERVAL_MINUTES: 1
       LOG_LEVEL: debug
+      JWT_SECRET: dev-secret-change-in-production
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -42,6 +65,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      - VITE_BACKEND_URL=http://backend:8080
     depends_on:
       - backend
     networks:
@@ -49,6 +74,7 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
 
 networks:
   containerlease:
