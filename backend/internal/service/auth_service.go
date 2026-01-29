@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -45,19 +45,21 @@ type TokenClaims struct {
 
 // RegisterResult represents registration response
 type RegisterResult struct {
-	UserID   string `json:"user_id"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Token    string `json:"token"`
+	UserID    string `json:"userId"`
+	Email     string `json:"email"`
+	Username  string `json:"username"`
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expiresAt"`
+	TenantID  string `json:"tenantId"`
 }
 
 // LoginResult represents login response
 type LoginResult struct {
-	UserID    string `json:"user_id"`
+	UserID    string `json:"userId"`
 	Email     string `json:"email"`
 	Token     string `json:"token"`
-	ExpiresIn int    `json:"expires_in"` // seconds
-	TokenType string `json:"token_type"`
+	ExpiresAt string `json:"expiresAt"`
+	TenantID  string `json:"tenantId"`
 }
 
 // Register creates a new user account
@@ -109,11 +111,14 @@ func (s *AuthService) Register(email, username, password, tenantID string) (*Reg
 		return nil, err
 	}
 
+	expiresAt := time.Now().Add(15 * time.Minute).Format(time.RFC3339)
 	return &RegisterResult{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Username: user.Username,
-		Token:    token,
+		UserID:    user.ID,
+		Email:     user.Email,
+		Username:  user.Username,
+		Token:     token,
+		ExpiresAt: expiresAt,
+		TenantID:  user.TenantID,
 	}, nil
 }
 
@@ -148,12 +153,13 @@ func (s *AuthService) Login(email, password string) (*LoginResult, error) {
 		slog.String("email", user.Email),
 	)
 
+	expiresAt := time.Now().Add(15 * time.Minute).Format(time.RFC3339)
 	return &LoginResult{
 		UserID:    user.ID,
 		Email:     user.Email,
 		Token:     token,
-		ExpiresIn: 900, // 15 minutes
-		TokenType: "Bearer",
+		ExpiresAt: expiresAt,
+		TenantID:  user.TenantID,
 	}, nil
 }
 

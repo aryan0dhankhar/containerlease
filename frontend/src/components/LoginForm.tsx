@@ -126,7 +126,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, initialMod
               placeholder="••••••••"
               required
               disabled={loading}
-              minLength={mode === 'signup' ? 6 : 1}
+              minLength={mode === 'signup' ? 8 : 1}
             />
           </div>
 

@@ -1,0 +1,67 @@
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: containerlease-postgres
+    runtime: postgres15
+    ipAllowList: [] # Allow all
+    plan: free
+    envVars:
+      - key: POSTGRES_USER
+        value: containerlease
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: containerlease
+
+  # Redis Cache
+  - type: pserv
+    name: containerlease-redis
+    runtime: redis7
+    plan: free
+    ipAllowList: [] # Allow all
+
+  # Backend API (Go)
+  - type: web
+    name: containerlease-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    envVars:
+      - key: DB_HOST
+        fromService:
+          name: containerlease-postgres
+          property: host
+      - key: DB_USER
+        value: containerlease
+      - key: DB_PASSWORD
+        fromService:
+          name: containerlease-postgres
+          envVarKey: POSTGRES_PASSWORD
+      - key: DB_NAME
+        value: containerlease
+      - key: REDIS_URL
+        fromService:
+          name: containerlease-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /healthz
+    healthCheckTimeout: 30
+    numInstances: 1
+
+  # Frontend (React)
+  - type: web
+    name: containerlease-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    envVars:
+      - key: VITE_BACKEND_URL
+        fromService:
+          name: containerlease-backend
+          property: url
+    healthCheckPath: /

@@ -32,7 +32,7 @@ func (r *PostgresUserRepository) Create(user *domain.User) error {
 	query := `
 		INSERT INTO users (email, username, password_hash, tenant_id, is_active)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING created_at, updated_at
+		RETURNING id, created_at, updated_at
 	`
 
 	err := r.db.QueryRow(
@@ -42,7 +42,7 @@ func (r *PostgresUserRepository) Create(user *domain.User) error {
 		user.PasswordHash,
 		user.TenantID,
 		user.IsActive,
-	).Scan(&user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		r.logger.Error("failed to create user",

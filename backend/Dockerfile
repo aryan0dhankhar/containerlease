@@ -22,6 +22,7 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates curl
 
 COPY --from=builder /app/bin/server .
+COPY --from=builder /app/migrations ./migrations
 
 EXPOSE 8080
 

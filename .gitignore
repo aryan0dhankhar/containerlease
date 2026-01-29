@@ -7,6 +7,11 @@ backend/server
 backend/dump.rdb
 *.log
 
+# Root .env files (never commit)
+.env
+.env.local
+.env.*.local
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
