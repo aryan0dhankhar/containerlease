@@ -5,7 +5,6 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    buildContext: ./backend
     envVars:
       - key: DB_HOST
         value: localhost
@@ -33,7 +32,6 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./frontend/Dockerfile
-    buildContext: ./frontend
     envVars:
       - key: VITE_BACKEND_URL
         value: https://containerlease-backend.onrender.com
