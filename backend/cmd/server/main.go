@@ -236,18 +236,22 @@ func main() {
 	// Wrap with OpenTelemetry HTTP handler for tracing
 	rootHandler := otelhttp.NewHandler(withMetrics, "http.server")
 
-	// 9. Start cleanup worker in background
-	cleanupWorker := worker.NewCleanupWorker(
-		leaseRepo,
-		containerRepo,
-		dockerClient,
-		log,
-		time.Duration(cfg.CleanupIntervalMinutes)*time.Minute,
-	)
+	// 9. Start cleanup worker in background (only if Redis is available)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go cleanupWorker.Start(ctx)
+	if redisClient != nil {
+		cleanupWorker := worker.NewCleanupWorker(
+			leaseRepo,
+			containerRepo,
+			dockerClient,
+			log,
+			time.Duration(cfg.CleanupIntervalMinutes)*time.Minute,
+		)
+		go cleanupWorker.Start(ctx)
+	} else {
+		log.Warn("Redis not available - cleanup worker disabled")
+	}
 
 	// Combined handler: WebSocket routes bypass middleware wrapping, other routes go through full middleware stack
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
