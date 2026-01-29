@@ -1,21 +1,4 @@
 services:
-  # PostgreSQL Database
-  - type: postgres
-    name: containerlease-postgres
-    plan: free
-    envVars:
-      - key: POSTGRES_USER
-        value: containerlease
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: containerlease
-
-  # Redis Cache
-  - type: redis
-    name: containerlease-redis
-    plan: free
-
   # Backend API (Go)
   - type: web
     name: containerlease-backend
@@ -24,23 +7,17 @@ services:
     dockerfilePath: ./backend/Dockerfile
     envVars:
       - key: DB_HOST
-        fromService:
-          name: containerlease-postgres
-          type: postgres
-          property: host
+        value: localhost
       - key: DB_PORT
         value: "5432"
       - key: DB_USER
         value: containerlease
       - key: DB_PASSWORD
-        fromService:
-          name: containerlease-postgres
-          type: postgres
-          envVarKey: POSTGRES_PASSWORD
+        value: changeme
       - key: DB_NAME
         value: containerlease
       - key: REDIS_URL
-        value: redis://${containerlease-redis.RENDER_REDIS_HOST}:${containerlease-redis.RENDER_REDIS_PORT}
+        value: redis://localhost:6379
       - key: JWT_SECRET
         generateValue: true
       - key: ENVIRONMENT
@@ -57,6 +34,4 @@ services:
     dockerfilePath: ./frontend/Dockerfile
     envVars:
       - key: VITE_BACKEND_URL
-        value: https://${containerlease-backend.onrender.com}
-    buildCommand: npm run build
-    startCommand: serve -s dist -l 3000
+        value: https://containerlease-backend.onrender.com
