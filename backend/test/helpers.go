@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yourorg/containerlease/internal/handler"
-	"github.com/yourorg/containerlease/internal/infrastructure/logger"
-	"github.com/yourorg/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/handler"
+	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/logger"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
 )
 
 // TestServerHelper creates a test HTTP server without needing a running backend

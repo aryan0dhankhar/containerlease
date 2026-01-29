@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/security"
-	"github.com/yourorg/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/security"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
 )
 
 // SecretsHandler handles secret management operations (admin only)

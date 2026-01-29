@@ -53,8 +53,7 @@ Provision a new container with specified resources and duration.
   "status": "pending",
   "expiryTime": "2026-01-25T13:30:00Z",
   "createdAt": "2026-01-25T13:00:00Z",
-  "imageType": "ubuntu",
-  "cost": 0.02
+  "imageType": "ubuntu"
 }
 ```
 
@@ -80,7 +79,6 @@ List all active containers.
       "status": "running",
       "cpuMilli": 500,
       "memoryMB": 512,
-      "cost": 0.02,
       "createdAt": "2026-01-25T13:00:00Z",
       "expiryAt": "2026-01-25T13:30:00Z",
       "expiresIn": 1800
@@ -93,7 +91,7 @@ List all active containers.
 - `pending`: Container is being provisioned
 - `running`: Container is active
 - `error`: Provisioning failed
-- `terminated`: Container has been stopped (billing finalized)
+- `terminated`: Container has been stopped
 
 #### `GET /api/containers/{id}/status`
 Get detailed status of a specific container.
@@ -106,7 +104,6 @@ Get detailed status of a specific container.
   "imageType": "ubuntu",
   "createdAt": "2026-01-25T13:00:00Z",
   "expiryTime": "2026-01-25T13:30:00Z",
-  "cost": 0.02,
   "timeLeftSeconds": 1800,
   "error": ""
 }
@@ -120,7 +117,7 @@ Manually terminate a container before its lease expires.
 - `404 Not Found`: Container not found
 - `500 Internal Server Error`: Termination failed
 
-**Note:** Final cost is calculated based on actual runtime and persisted.
+**Note:** Container is terminated immediately.
 
 ---
 
@@ -159,7 +156,7 @@ ws.onerror = (error) => {
 
 ---
 
-## Resource Limits & Billing
+## Resource Limits
 
 ### CPU Allocation
 - **Unit:** Millicores (1000m = 1 CPU core)
@@ -173,13 +170,10 @@ ws.onerror = (error) => {
 - **Maximum:** 2048 MB (2 GB)
 - **Options:** 256 MB, 512 MB, 1024 MB, 2048 MB
 
-### Billing Rates
-- **Ubuntu:** $0.04/hour
-- **Alpine:** $0.01/hour
-
-**Cost Calculation:**
-- **Initial:** Estimated based on requested duration
-- **Final:** Calculated on termination based on actual runtime
+### Duration
+- **Minimum:** 5 minutes
+- **Maximum:** 120 minutes
+- **Default:** 30 minutes
 
 ---
 

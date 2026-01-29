@@ -1,15 +1,15 @@
 # ContainerLease - Temporary Docker Container Provisioning Platform
 
-## 🎨 NEW: Enterprise Dark Theme Redesign
+## 🎨 Modern Dark Theme UI
 
-The UI has been completely redesigned with a **GitHub Dark Dimmed dark theme**, featuring:
-- **Monospace countdown timers** (HH:MM:SS) with warning animations
+The UI features a **clean dark theme** with:
+- **Countdown timers** (HH:MM:SS) with status animations
 - **Terminal-style log viewer** (black background, green text)
 - **Status color indicators** (green running, amber warning, red critical)
 - **Responsive card grid** (3 cols desktop, 1 col mobile)
-- **Control bar launchpad** (image, duration, resources, costs)
+- **Control bar** (image selection, duration, resource configuration)
 
-👉 **See the design**: [LAUNCH_NOTES.md](LAUNCH_NOTES.md) | [DARK_THEME_VISUAL_GUIDE.md](DARK_THEME_VISUAL_GUIDE.md)
+👉 **Getting Started**: See [API.md](API.md) for endpoints and [ARCHITECTURE.md](ARCHITECTURE.md) for design details.
 
 A modern web platform where developers can provision temporary Docker containers with strict resource limits, automatic lifecycle management, and real-time log streaming. Built with Go backend, React frontend, and Redis state management.
 
@@ -19,9 +19,8 @@ A modern web platform where developers can provision temporary Docker containers
 - **🐳 Docker Provisioning**: Native Docker SDK integration for container management
 - **⏱️ Time-Limited Leases**: Automatic expiration with configurable TTLs (5-120 minutes)
 - **📊 Resource Quotas**: Hard CPU/memory limits enforced per container
-- **💰 Usage-Based Billing**: Cost calculated on actual runtime at termination
 - **🧹 Garbage Collection**: Background reconciliation removes expired/orphaned containers
-- **📡 Real-Time Logs**: WebSocket streaming with heartbeat keepalive
+- **📡 Real-Time Logs**: REST endpoint with streaming log access
 - **🔒 Security**: Image allowlist, CORS enforcement, origin validation
 - **📈 Observability**: Structured JSON logging with request IDs
 
@@ -35,7 +34,6 @@ A modern web platform where developers can provision temporary Docker containers
 - Live dashboard with countdown timers per container
 - Real-time log viewer with connection state indicators
 - Resource selector with validation
-- Cost estimation vs. final billing display
 - Responsive design with mobile support
 
 ## Architecture Overview

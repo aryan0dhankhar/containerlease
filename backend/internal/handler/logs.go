@@ -2,13 +2,16 @@ package handler
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
 )
 
 // LogsHandler handles WebSocket connections for container logs
@@ -54,6 +57,16 @@ func (h *LogsHandler) getUpgrader() websocket.Upgrader {
 // ServeHTTP handles WebSocket requests for container logs
 func (h *LogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	containerID := r.PathValue("id")
+
+	// Fallback: extract container ID from path manually if PathValue didn't work
+	// Path format: /ws/logs/{id}?token=...
+	if containerID == "" {
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) >= 4 {
+			containerID = parts[3]
+		}
+	}
+
 	h.logger.Debug("logs request", slog.String("container_id", containerID))
 
 	if containerID == "" {
@@ -144,4 +157,114 @@ func (h *LogsHandler) streamLogsToWebSocket(ws *websocket.Conn, logStream io.Rea
 	}
 	close(done)
 	return nil
+}
+
+// GetLogs handles REST API requests for container logs
+func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	containerID := r.URL.Query().Get("container")
+	if containerID == "" {
+		// Try path parameter as fallback
+		containerID = r.PathValue("id")
+	}
+
+	h.logger.Debug("logs REST request", slog.String("container_id", containerID))
+
+	if containerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "missing container id",
+		})
+		return
+	}
+
+	// Resolve Docker ID from repository
+	container, err := h.containerRepo.GetByID(containerID)
+	if err != nil {
+		h.logger.Error("container not found for logs", slog.String("container_id", containerID), slog.String("error", err.Error()))
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "container not found",
+		})
+		return
+	}
+	if container.DockerID == "" {
+		h.logger.Error("container has no docker id", slog.String("container_id", containerID))
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "container not yet running",
+		})
+		return
+	}
+
+	// Get logs from Docker using Docker ID
+	logStream, err := h.dockerClient.StreamLogs(r.Context(), container.DockerID)
+	if err != nil {
+		h.logger.Error("failed to fetch logs",
+			slog.String("container_id", containerID),
+			slog.String("docker_id", container.DockerID),
+			slog.String("error", err.Error()),
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "failed to fetch logs",
+		})
+		return
+	}
+	defer logStream.Close()
+
+	// Read logs in chunks with timeout
+	// Instead of waiting for stream to close, read what's available in 2 seconds
+	readCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	var data []byte
+	buffer := make([]byte, 64*1024) // 64KB buffer per read
+	maxBytes := 10 * 1024 * 1024    // 10MB total limit
+
+readLoop:
+	for {
+		// Use a channel to avoid blocking forever on read
+		readDone := make(chan int, 1)
+		var readErr error
+
+		go func() {
+			n, err := logStream.Read(buffer)
+			if err != nil && err != io.EOF {
+				readErr = err
+			}
+			readDone <- n
+		}()
+
+		select {
+		case n := <-readDone:
+			if n > 0 {
+				data = append(data, buffer[:n]...)
+				if len(data) > maxBytes {
+					data = data[:maxBytes]
+					data = append(data, []byte("\n\n... (logs truncated - exceeded 10MB limit)")...)
+					break readLoop
+				}
+			}
+			if readErr != nil || n == 0 {
+				// EOF or error, stop reading
+				break readLoop
+			}
+		case <-readCtx.Done():
+			// Timeout reached
+			if len(data) == 0 {
+				data = []byte("(no logs available yet - container may still be initializing)")
+			} else {
+				data = append(data, []byte("\n\n... (logs incomplete - read timeout)")...)
+			}
+			break readLoop
+		}
+	}
+
+	// Return logs as JSON
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"logs": string(data),
+	})
 }

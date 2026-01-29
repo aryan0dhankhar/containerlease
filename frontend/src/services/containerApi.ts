@@ -47,7 +47,7 @@ export interface LoginResponse {
 
 export const containerApi = {
   async login(email: string, password: string): Promise<LoginResponse> {
-    const response = await fetch(`${BACKEND_URL}/api/login`, {
+    const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -56,6 +56,24 @@ export const containerApi = {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Login failed' }))
       throw new Error(error.error || 'Login failed')
+    }
+
+    return response.json()
+  },
+
+  async register(email: string, username: string, password: string): Promise<LoginResponse> {
+    // First create a default tenant ID for the user
+    const tenantId = crypto.randomUUID()
+    
+    const response = await fetch(`${BACKEND_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, username, password, tenantId }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Registration failed' }))
+      throw new Error(error.error || 'Registration failed')
     }
 
     return response.json()
@@ -168,7 +186,9 @@ export const containerApi = {
     onError: (error: Error) => void
   ): () => void {
     const wsUrl = BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://')
-    const ws = new WebSocket(`${wsUrl}/ws/logs/${containerId}`)
+    const token = localStorage.getItem('token')
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+    const ws = new WebSocket(`${wsUrl}/ws/logs/${containerId}${tokenParam}`)
 
     ws.onopen = () => {
       console.log('WebSocket connected')

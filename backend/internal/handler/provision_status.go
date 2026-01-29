@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
 )
 
 // ProvisionStatusResponse represents the current status of a provisioning container

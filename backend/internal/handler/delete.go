@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/yourorg/containerlease/internal/security"
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/security"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
 )
 
 // DeleteHandler handles container deletion requests

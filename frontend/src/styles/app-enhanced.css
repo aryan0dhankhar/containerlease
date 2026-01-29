@@ -1,0 +1,135 @@
+/* ============================================================================
+   App Layout - High-Fidelity Design
+   Professional container management interface
+   ============================================================================ */
+
+.app-enhanced {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--color-bg-primary);
+}
+
+/* --- Enhanced Header --- */
+.app-header-enhanced {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2xl);
+  padding: var(--space-lg) var(--space-2xl);
+  background: linear-gradient(180deg, var(--color-bg-secondary) 0%, transparent 100%);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-brand {
+  flex: 1;
+}
+
+.header-brand h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.brand-accent {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+/* --- Main Content --- */
+.app-main-enhanced {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* --- Footer --- */
+.app-footer {
+  padding: var(--space-lg) var(--space-2xl);
+  text-align: center;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 1024px) {
+  .app-header-enhanced {
+    padding: var(--space-md) var(--space-lg);
+    gap: var(--space-lg);
+  }
+
+  .header-brand h1 {
+    font-size: 1.25rem;
+  }
+
+  .header-nav {
+    gap: var(--space-sm);
+  }
+
+  .header-nav .btn {
+    padding: 0.65rem 1.25rem;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-enhanced {
+    min-height: 100vh;
+  }
+
+  .app-header-enhanced {
+    padding: var(--space-md);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-lg);
+  }
+
+  .header-nav {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .header-nav .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-footer {
+    padding: var(--space-lg);
+  }
+}
+
+/* --- Scrollbar Styling --- */
+.app-main-enhanced::-webkit-scrollbar {
+  width: 8px;
+}
+
+.app-main-enhanced::-webkit-scrollbar-track {
+  background-color: var(--color-bg-primary);
+}
+
+.app-main-enhanced::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+}
+
+.app-main-enhanced::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-bright);
+}

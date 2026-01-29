@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/security"
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/security"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
 )
 
 // SnapshotHandler handles container snapshot operations

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/yourorg/containerlease/pkg/config"
+	"github.com/aryan0dhankhar/containerlease/pkg/config"
 )
 
 // PresetsHandler returns available provisioning presets

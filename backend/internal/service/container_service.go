@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/observability/metrics"
-	"github.com/yourorg/containerlease/pkg/config"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/observability/metrics"
+	"github.com/aryan0dhankhar/containerlease/pkg/config"
 )
 
 // ContainerService handles container provisioning logic
@@ -54,7 +54,6 @@ func (s *ContainerService) ProvisionContainer(ctx context.Context, opts Provisio
 	// 1. Create domain entity with pending status
 	now := time.Now()
 	expiryTime := now.Add(time.Duration(opts.DurationMinutes) * time.Minute)
-	cost := calculateCost(opts.ImageType, float64(opts.DurationMinutes))
 
 	container := &domain.Container{
 		ID:          generateContainerID(), // Generate temp ID
@@ -65,7 +64,6 @@ func (s *ContainerService) ProvisionContainer(ctx context.Context, opts Provisio
 		Status:      "pending", // Status is PENDING initially
 		CreatedAt:   now,
 		ExpiryAt:    expiryTime,
-		Cost:        cost,
 		MaxRestarts: 3, // Phase 2: Self-healing default max restarts
 	}
 
@@ -194,14 +192,9 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 	}
 
-	// Compute usage-based cost at termination
-	runtimeMinutes := time.Since(container.CreatedAt).Minutes()
-	if runtimeMinutes < 0 {
-		runtimeMinutes = 0
-	}
-	container.Cost = calculateCost(container.ImageType, runtimeMinutes)
+	// Mark container as terminated
 	container.Status = "terminated"
-	container.ExpiryAt = time.Now().Add(15 * time.Minute) // retain record briefly for billing visibility
+	container.ExpiryAt = time.Now().Add(15 * time.Minute) // retain record briefly
 
 	if err := s.containerRepository.Save(container); err != nil {
 		return fmt.Errorf("failed to persist container record: %w", err)
@@ -217,21 +210,6 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	metrics.ObserveCleanup("manual", "success")
 
 	return nil
-}
-
-// calculateCost returns the cost in dollars for a given instance type and duration
-func calculateCost(imageType string, durationMinutes float64) float64 {
-	hourlyRate := 0.0
-	switch imageType {
-	case "ubuntu":
-		hourlyRate = 0.04 // $0.04/hour (Medium instance)
-	case "alpine":
-		hourlyRate = 0.01 // $0.01/hour (Small instance)
-	default:
-		hourlyRate = 0.04
-	}
-	durationHours := durationMinutes / 60.0
-	return hourlyRate * durationHours
 }
 
 // generateContainerID generates a unique container ID

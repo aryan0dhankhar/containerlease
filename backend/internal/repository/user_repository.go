@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
 )
 
 // PostgresUserRepository implements domain.UserRepository using PostgreSQL

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/security/auth"
+	"github.com/aryan0dhankhar/containerlease/internal/security/auth"
 )
 
 // LoginRequest represents login credentials

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/handler"
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/handler"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
 )
 
 // Mock implementations for testing

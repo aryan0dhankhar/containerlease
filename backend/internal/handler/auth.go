@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
 )
 
 // AuthHandler handles authentication endpoints

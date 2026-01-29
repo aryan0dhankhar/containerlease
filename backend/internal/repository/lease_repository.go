@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/infrastructure/redis"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/redis"
 )
 
 // LeaseRepository implements domain.LeaseRepository using Redis

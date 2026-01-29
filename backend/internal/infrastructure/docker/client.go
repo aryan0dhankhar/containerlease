@@ -10,8 +10,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
-	"github.com/yourorg/containerlease/internal/reliability/circuitbreaker"
-	"github.com/yourorg/containerlease/internal/reliability/retry"
+	"github.com/aryan0dhankhar/containerlease/internal/reliability/circuitbreaker"
+	"github.com/aryan0dhankhar/containerlease/internal/reliability/retry"
 )
 
 // Client wraps the Docker SDK client with retry and circuit breaker capabilities

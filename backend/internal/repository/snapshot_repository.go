@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/yourorg/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
 )
 
 // SnapshotRepository implements domain.SnapshotRepository using Redis

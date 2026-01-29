@@ -6,13 +6,17 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/security/audit"
-	"github.com/yourorg/containerlease/internal/security/auth"
-	"github.com/yourorg/containerlease/internal/security/ratelimit"
+	"github.com/aryan0dhankhar/containerlease/internal/security/audit"
+	"github.com/aryan0dhankhar/containerlease/internal/security/auth"
+	"github.com/aryan0dhankhar/containerlease/internal/security/ratelimit"
 )
 
 type TenantContextKey struct{}
 type ClaimsContextKey struct{}
+
+func isWebSocketPath(path string) bool {
+	return len(path) > 8 && path[:8] == "/ws/logs"
+}
 
 func JWTMiddleware(tm *auth.TokenManager, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -29,6 +33,38 @@ func JWTMiddleware(tm *auth.TokenManager, log *slog.Logger) func(http.Handler) h
 				r.URL.Path == "/health" || r.URL.Path == "/ready" ||
 				r.URL.Path == "/api/auth/register" || r.URL.Path == "/api/auth/login" {
 				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Extract token from WebSocket URL query parameter or Authorization header
+			if isWebSocketPath(r.URL.Path) {
+				token := r.URL.Query().Get("token")
+				if token == "" {
+					authHeader := r.Header.Get("Authorization")
+					if authHeader != "" {
+						var err error
+						token, err = auth.ExtractToken(authHeader)
+						if err != nil {
+							http.Error(w, `{"error":"invalid auth"}`, http.StatusUnauthorized)
+							return
+						}
+					}
+				}
+
+				if token == "" {
+					http.Error(w, `{"error":"missing auth"}`, http.StatusUnauthorized)
+					return
+				}
+
+				claims, err := tm.ValidateToken(token)
+				if err != nil {
+					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+					return
+				}
+
+				ctx := context.WithValue(r.Context(), ClaimsContextKey{}, claims)
+				ctx = context.WithValue(ctx, TenantContextKey{}, claims.TenantID)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 

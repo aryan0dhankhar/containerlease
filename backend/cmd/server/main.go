@@ -16,22 +16,22 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/yourorg/containerlease/internal/handler"
-	"github.com/yourorg/containerlease/internal/infrastructure/docker"
-	"github.com/yourorg/containerlease/internal/infrastructure/logger"
-	"github.com/yourorg/containerlease/internal/infrastructure/redis"
-	obsmetrics "github.com/yourorg/containerlease/internal/observability/metrics"
-	"github.com/yourorg/containerlease/internal/observability/tracing"
-	"github.com/yourorg/containerlease/internal/repository"
-	"github.com/yourorg/containerlease/internal/security"
-	"github.com/yourorg/containerlease/internal/security/audit"
-	"github.com/yourorg/containerlease/internal/security/auth"
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/security/ratelimit"
-	"github.com/yourorg/containerlease/internal/service"
-	"github.com/yourorg/containerlease/internal/worker"
-	"github.com/yourorg/containerlease/pkg/config"
-	"github.com/yourorg/containerlease/pkg/database"
+	"github.com/aryan0dhankhar/containerlease/internal/handler"
+	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/docker"
+	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/logger"
+	"github.com/aryan0dhankhar/containerlease/internal/infrastructure/redis"
+	obsmetrics "github.com/aryan0dhankhar/containerlease/internal/observability/metrics"
+	"github.com/aryan0dhankhar/containerlease/internal/observability/tracing"
+	"github.com/aryan0dhankhar/containerlease/internal/repository"
+	"github.com/aryan0dhankhar/containerlease/internal/security"
+	"github.com/aryan0dhankhar/containerlease/internal/security/audit"
+	"github.com/aryan0dhankhar/containerlease/internal/security/auth"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/security/ratelimit"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/internal/worker"
+	"github.com/aryan0dhankhar/containerlease/pkg/config"
+	"github.com/aryan0dhankhar/containerlease/pkg/database"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -152,6 +152,8 @@ func main() {
 	mux.Handle("GET /api/containers", statusHandler)
 	mux.Handle("GET /api/containers/{id}/status", provisionStatusHandler)
 	mux.Handle("DELETE /api/containers/{id}", deleteHandler)
+	mux.Handle("GET /api/logs", http.HandlerFunc(logsHandler.GetLogs))
+	// WebSocket logs endpoint - handled separately without OpenTelemetry wrapping
 	mux.Handle("GET /ws/logs/{id}", logsHandler)
 	mux.Handle("/metrics", promhttp.Handler())
 
@@ -192,6 +194,7 @@ func main() {
 		w.Write([]byte("ready"))
 	})
 
+	// Main handler with all middleware layers for regular HTTP endpoints
 	// Base app handler with CORS
 	// Order matters: rate limit protects all endpoints, JWT validates protected ones
 	base := withRequestID(
@@ -222,10 +225,69 @@ func main() {
 
 	go cleanupWorker.Start(ctx)
 
+	// Combined handler: WebSocket routes bypass middleware wrapping, other routes go through full middleware stack
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Route WebSocket connections directly to the logs handler without heavy middleware
+		if r.Method == http.MethodGet && len(r.URL.Path) > 8 && r.URL.Path[:8] == "/ws/logs" {
+			log.Debug("websocket handler intercepted", slog.String("path", r.URL.Path))
+			// Apply CORS headers manually
+			origin := r.Header.Get("Origin")
+			if originAllowed(cfg.CORSAllowedOrigins, origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			} else if len(cfg.CORSAllowedOrigins) > 0 {
+				w.Header().Set("Access-Control-Allow-Origin", cfg.CORSAllowedOrigins[0])
+			}
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
+
+			// Apply JWT middleware for WebSocket
+			authHeader := r.Header.Get("Authorization")
+			token := r.URL.Query().Get("token")
+
+			if token == "" && authHeader != "" {
+				var err error
+				token, err = auth.ExtractToken(authHeader)
+				if err != nil {
+					http.Error(w, `{"error":"invalid auth"}`, http.StatusUnauthorized)
+					return
+				}
+			}
+
+			if token == "" {
+				http.Error(w, `{"error":"missing auth"}`, http.StatusUnauthorized)
+				return
+			}
+
+			claims, err := tokenManager.ValidateToken(token)
+			if err != nil {
+				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), middleware.ClaimsContextKey{}, claims)
+			ctx = context.WithValue(ctx, middleware.TenantContextKey{}, claims.TenantID)
+
+			// Extract container ID from path manually (path format: /ws/logs/{id})
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) >= 4 {
+				containerID := parts[3]
+				// Create a new request with the container ID in URL values for PathValue compatibility
+				r = r.WithContext(context.WithValue(ctx, "container_id", containerID))
+			}
+
+			logsHandler.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// Route all other requests through the full middleware stack
+		rootHandler.ServeHTTP(w, r)
+	})
+
 	// 10. Start HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.ServerPort),
-		Handler:      rootHandler,
+		Handler:      finalHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

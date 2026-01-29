@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/observability/metrics"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/observability/metrics"
 )
 
 // CleanupWorker periodically checks for expired container leases and cleans them up
@@ -143,7 +143,6 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 	if container.DockerID == "" {
 		logger.Info("container pending without Docker ID, marking terminated")
 		container.Status = "terminated"
-		container.Cost = calculateCost(container.ImageType, time.Since(container.CreatedAt).Minutes())
 		container.ExpiryAt = time.Now().Add(archiveRetention)
 		if err := w.containerRepository.Save(container); err != nil {
 			logger.Error("failed to persist container", slog.String("error", err.Error()))
@@ -203,12 +202,7 @@ func (w *CleanupWorker) performCleanup(ctx context.Context, containerID string) 
 		logger.Debug("volume removed", slog.String("volume_id", container.VolumeID))
 	}
 
-	// Step 4: Mark terminated, compute usage-based cost, retain record briefly
-	runtimeMinutes := time.Since(container.CreatedAt).Minutes()
-	if runtimeMinutes < 0 {
-		runtimeMinutes = 0
-	}
-	container.Cost = calculateCost(container.ImageType, runtimeMinutes)
+	// Step 4: Mark terminated and retain record briefly
 	container.Status = "terminated"
 	container.ExpiryAt = time.Now().Add(archiveRetention)
 	if err := w.containerRepository.Save(container); err != nil {
@@ -251,20 +245,4 @@ func (w *CleanupWorker) attemptRestart(container *domain.Container, logger *slog
 	container.FailureReason = ""
 
 	return true
-}
-
-func calculateCost(imageType string, durationMinutes float64) float64 {
-	hourlyRate := 0.0
-	switch imageType {
-	case "ubuntu":
-		hourlyRate = 0.04
-	case "alpine":
-		hourlyRate = 0.01
-	default:
-		hourlyRate = 0.04
-	}
-	if durationMinutes < 0 {
-		durationMinutes = 0
-	}
-	return hourlyRate * (durationMinutes / 60.0)
 }

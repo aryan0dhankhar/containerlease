@@ -1,8 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
-import './App.css'
-import { ProvisionForm } from './components/ProvisionForm'
-import { ContainerList } from './components/ContainerList'
-import { LoginForm } from './components/LoginForm'
+import './styles/design-system.css'
+import './styles/dashboard.css'
+import './styles/provision-form.css'
+import './styles/app-enhanced.css'
+import { CommandCenter } from './components/CommandCenter'
+import { ProvisionFormEnhanced } from './components/ProvisionFormEnhanced'
+import { HomePage } from './components/HomePage'
 import type { LoginResponse } from './types/container'
 
 const BUILD_TIME = new Date().toLocaleString()
@@ -11,94 +14,128 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState<LoginResponse | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [containerCount, setContainerCount] = useState(0)
+  const [showProvisionForm, setShowProvisionForm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Check for existing token on mount
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    const userStr = localStorage.getItem('user')
-    if (token && userStr) {
-      try {
-        const userData = JSON.parse(userStr)
-        setIsAuthenticated(true)
-        setUser({ ...userData, token, expiresAt: '' })
-      } catch (e) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
+    try {
+      const token = localStorage.getItem('token')
+      const userStr = localStorage.getItem('user')
+      if (token && userStr) {
+        try {
+          const userData = JSON.parse(userStr)
+          setIsAuthenticated(true)
+          setUser({ ...userData, token, expiresAt: '' })
+        } catch (e) {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+        }
       }
+    } catch (err) {
+      console.error('Error in App mount:', err)
+      setError('Failed to initialize app')
     }
   }, [])
 
   const handleLoginSuccess = useCallback((token: string, userData: LoginResponse) => {
-    setIsAuthenticated(true)
-    setUser(userData)
+    try {
+      setIsAuthenticated(true)
+      setUser(userData)
+      setError(null)
+    } catch (err) {
+      console.error('Error in handleLoginSuccess:', err)
+      setError('Login succeeded but failed to update UI')
+    }
   }, [])
 
   const handleLogout = useCallback(() => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    setIsAuthenticated(false)
-    setUser(null)
+    try {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      setIsAuthenticated(false)
+      setUser(null)
+      setError(null)
+    } catch (err) {
+      console.error('Error in handleLogout:', err)
+    }
   }, [])
 
   const handleContainerProvisioned = useCallback(() => {
-    setRefreshTrigger((prev) => prev + 1)
+    try {
+      setRefreshTrigger((prev) => prev + 1)
+      setShowProvisionForm(false)
+    } catch (err) {
+      console.error('Error in handleContainerProvisioned:', err)
+      setError('Container created but failed to update dashboard')
+    }
   }, [])
 
+  if (error) {
+    return (
+      <div style={{ 
+        padding: '2rem', 
+        color: 'red', 
+        fontSize: '18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: '#0f172a'
+      }}>
+        <div>Error: {error}</div>
+      </div>
+    )
+  }
+
   if (!isAuthenticated) {
-    return <LoginForm onLoginSuccess={handleLoginSuccess} />
+    return <HomePage onLoginSuccess={handleLoginSuccess} />
   }
 
   return (
-    <div className="app">
-      {/* Top Header */}
-      <header className="app-header">
-        <div className="header-left">
-          <span>Container</span>
-          <span style={{ color: '#38bdf8' }}>Lease</span>
+    <div className="app-enhanced">
+      {/* Minimalist Top Bar */}
+      <header className="app-header-enhanced">
+        <div className="header-brand">
+          <h1>
+            Container<span className="brand-accent">Lease</span>
+          </h1>
         </div>
-        <div className="header-right">
-          <div className="stat">
-            <span className="stat-label">Active</span>
-            <span className="stat-value">{containerCount}</span>
-          </div>
-          <div className="stat">
-            <span className="stat-label">User</span>
-            <span className="stat-value" style={{ fontSize: '0.85rem' }}>{user?.userId}</span>
-          </div>
-          <div className="stat">
-            <span className="stat-label">Build</span>
-            <span className="stat-value" style={{ fontSize: '0.85rem' }}>{BUILD_TIME.split(',')[0]}</span>
-          </div>
+
+        <nav className="header-nav">
           <button 
-            onClick={handleLogout}
-            style={{
-              padding: '6px 12px',
-              background: '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-            }}
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowProvisionForm(true)}
           >
-            Logout
+            + Create Container
           </button>
-        </div>
+          <button 
+            className="btn btn-secondary btn-sm"
+            onClick={handleLogout}
+          >
+            {user?.userId ? user.userId.substring(0, 8) : 'user'} • Logout
+          </button>
+        </nav>
       </header>
 
-      {/* Control Bar / Launchpad */}
-      <div className="control-bar">
-        <ProvisionForm onProvisioned={handleContainerProvisioned} />
-      </div>
-
       {/* Main Content */}
-      <main className="app-main">
-        <div className="container-grid">
-          <ContainerList key={refreshTrigger} onCountChange={setContainerCount} />
-        </div>
+      <main className="app-main-enhanced">
+        {showProvisionForm ? (
+          <ProvisionFormEnhanced
+            onSuccess={handleContainerProvisioned}
+            onCancel={() => setShowProvisionForm(false)}
+          />
+        ) : (
+          <CommandCenter
+            refreshTrigger={refreshTrigger}
+          />
+        )}
       </main>
+
+      {/* Footer with Build Info */}
+      <footer className="app-footer">
+        <small>Built {BUILD_TIME} • All containers are ephemeral and automatically destroyed at expiration</small>
+      </footer>
     </div>
   )
 }

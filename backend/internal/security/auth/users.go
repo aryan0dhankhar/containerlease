@@ -22,17 +22,11 @@ type UserStore struct {
 	users map[string]*User // email -> user
 }
 
-// NewUserStore creates a new user store with demo users
+// NewUserStore creates a new user store
 func NewUserStore() *UserStore {
 	store := &UserStore{
 		users: make(map[string]*User),
 	}
-
-	// Add demo users for testing
-	store.AddUser("demo@example.com", "demo123", "tenant-demo", "user-demo-1")
-	store.AddUser("admin@example.com", "admin123", "tenant-admin", "user-admin-1")
-	store.AddUser("test@example.com", "test123", "tenant-test", "user-test-1")
-
 	return store
 }
 

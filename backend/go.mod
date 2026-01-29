@@ -1,4 +1,4 @@
-module github.com/yourorg/containerlease
+module github.com/aryan0dhankhar/containerlease
 
 go 1.24.0
 

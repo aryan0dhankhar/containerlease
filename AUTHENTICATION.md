@@ -17,8 +17,8 @@ ContainerLease now includes a complete authentication and rate limiting system p
 #### Request
 ```json
 {
-  "email": "demo@example.com",
-  "password": "demo123"
+  "email": "user@example.com",
+  "password": "securepassword"
 }
 ```
 
@@ -26,20 +26,23 @@ ContainerLease now includes a complete authentication and rate limiting system p
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresAt": "2026-01-27T12:34:56Z",
-  "tenantId": "tenant-demo",
-  "userId": "user-demo-1"
+  "expiresAt": "2026-01-28T12:34:56Z",
+  "tenantId": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "660e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
-#### Demo Users
-Three demo accounts are pre-configured for testing:
-
-| Email | Password | Tenant |
-|-------|----------|--------|
-| demo@example.com | demo123 | tenant-demo |
-| admin@example.com | admin123 | tenant-admin |
-| test@example.com | test123 | tenant-test |
+#### Creating an Account
+Before logging in, create an account via the signup form in the frontend or using the registration endpoint:
+```bash
+curl -X POST http://localhost:8080/api/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "username": "myusername",
+    "password": "securepassword"
+  }'
+```
 
 ### 2. JWT Token-Based Authorization
 
@@ -54,11 +57,11 @@ Authorization: Bearer <token>
 #### Token Claims
 ```json
 {
-  "tenant_id": "tenant-demo",
-  "user_id": "user-demo-1",
-  "email": "demo@example.com",
-  "iat": 1643846400,
-  "exp": 1643932800,
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "660e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "iat": 1738060800,
+  "exp": 1738147200,
   "iss": "containerlease"
 }
 ```
@@ -106,11 +109,11 @@ HTTP Status: 429 Too Many Requests
 `frontend/src/components/LoginForm.tsx`
 
 #### Features
-- Form validation
+- Form validation (email, password, password confirmation for signup)
 - Loading state during authentication
 - Automatic token persistence to localStorage
-- Demo credentials for testing
-- Beautiful CSS styling
+- Signup and login modes
+- Beautiful CSS styling with gradient background
 
 #### Integration
 - Automatically shown when no token exists
@@ -199,8 +202,8 @@ JWT_SECRET="your-secret-key-change-in-production"
 curl -X POST http://localhost:8080/api/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "demo@example.com",
-    "password": "demo123"
+    "email": "user@example.com",
+    "password": "securepassword"
   }'
 ```
 
@@ -209,7 +212,7 @@ curl -X POST http://localhost:8080/api/login \
 # First, get the token from login
 TOKEN=$(curl -s -X POST http://localhost:8080/api/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"demo@example.com","password":"demo123"}' | jq -r '.token')
+  -d '{"email":"user@example.com","password":"securepassword"}' | jq -r '.token')
 
 # Use token to provision a container
 curl -X POST http://localhost:8080/api/provision \
@@ -229,7 +232,7 @@ curl -X POST http://localhost:8080/api/provision \
 for i in {1..11}; do
   curl -X POST http://localhost:8080/api/login \
     -H "Content-Type: application/json" \
-    -d '{"email":"demo@example.com","password":"demo123"}' \
+    -d '{"email":"user@example.com","password":"securepassword"}' \
     -w "\n[Request $i] Status: %{http_code}\n"
 done
 # Last request returns 429 Too Many Requests
@@ -354,7 +357,8 @@ action=rate_limit_exceeded tenant_id=tenant-demo reason=api_limit
 **Solution**:
 - Verify email matches exactly
 - Check password is correct
-- Use demo credentials: demo@example.com / demo123
+- Ensure account was created via signup first
+- Database connection must be working
 
 ---
 

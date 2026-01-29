@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/security"
-	"github.com/yourorg/containerlease/internal/security/middleware"
-	"github.com/yourorg/containerlease/internal/service"
-	"github.com/yourorg/containerlease/pkg/config"
+	"github.com/aryan0dhankhar/containerlease/internal/security"
+	"github.com/aryan0dhankhar/containerlease/internal/security/middleware"
+	"github.com/aryan0dhankhar/containerlease/internal/service"
+	"github.com/aryan0dhankhar/containerlease/pkg/config"
 )
 
 // ProvisionRequest represents the request to provision a container

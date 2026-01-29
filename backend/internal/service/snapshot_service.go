@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/pkg/config"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/pkg/config"
 )
 
 // SnapshotService handles container snapshot/backup operations (Phase 2: Disaster Recovery)
@@ -113,7 +113,6 @@ func (s *SnapshotService) RestoreSnapshot(ctx context.Context, snapshotID string
 	// Create new container entity
 	now := time.Now()
 	expiryTime := now.Add(time.Duration(opts.DurationMinutes) * time.Minute)
-	cost := calculateCost(opts.ImageType, float64(opts.DurationMinutes))
 
 	container := &domain.Container{
 		ID:          generateContainerID(),
@@ -124,7 +123,6 @@ func (s *SnapshotService) RestoreSnapshot(ctx context.Context, snapshotID string
 		Status:      "pending",
 		CreatedAt:   now,
 		ExpiryAt:    expiryTime,
-		Cost:        cost,
 		MaxRestarts: 3, // Phase 2: Self-healing
 	}
 

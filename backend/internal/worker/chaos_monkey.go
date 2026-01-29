@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/yourorg/containerlease/internal/domain"
-	"github.com/yourorg/containerlease/internal/observability/metrics"
+	"github.com/aryan0dhankhar/containerlease/internal/domain"
+	"github.com/aryan0dhankhar/containerlease/internal/observability/metrics"
 )
 
 // ChaosMonkey randomly kills containers to test system resilience (Phase 2)
