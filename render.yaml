@@ -50,8 +50,6 @@ services:
       - key: LOG_LEVEL
         value: info
     healthCheckPath: /healthz
-    healthCheckTimeout: 30
-    numInstances: 1
 
   # Frontend (React)
   - type: web
